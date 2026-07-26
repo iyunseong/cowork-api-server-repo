@@ -1,6 +1,7 @@
 node_modules/
-www/
-android/
-ios/
+# Generated app platform (app-level only, not plugin sources under plugins/)
+/www/
+/android/
+/ios/
 *.log
 .DS_Store

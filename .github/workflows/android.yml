@@ -65,6 +65,14 @@ jobs:
       - name: Sync Capacitor
         working-directory: mobile
         run: npx cap sync android
+      - name: Set app version (so upgrades install over old builds)
+        working-directory: mobile
+        run: |
+          VN=$(cat VERSION)
+          VC=${{ github.run_number }}
+          sed -i -E "s/versionCode [0-9]+/versionCode ${VC}/" android/app/build.gradle
+          sed -i -E "s/versionName \"[^\"]*\"/versionName \"${VN}\"/" android/app/build.gradle
+          grep -nE "versionCode|versionName" android/app/build.gradle
       - name: Assemble debug APK
         working-directory: mobile/android
         run: ./gradlew assembleDebug --no-daemon

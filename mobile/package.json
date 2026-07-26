@@ -13,7 +13,8 @@
     "@capacitor/android": "^6.1.2",
     "@capacitor/core": "^6.1.2",
     "@capacitor/local-notifications": "^6.1.0",
-    "@capacitor/preferences": "^6.0.2"
+    "@capacitor/preferences": "^6.0.2",
+    "foreground-service": "file:plugins/foreground-service"
   },
   "devDependencies": {
     "@capacitor/cli": "^6.1.2"

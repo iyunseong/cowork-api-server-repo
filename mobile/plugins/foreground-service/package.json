@@ -1,0 +1,21 @@
+{
+  "name": "foreground-service",
+  "version": "1.0.0",
+  "description": "Android foreground service to keep the KTX macro running while the app is backgrounded",
+  "main": "src/index.js",
+  "module": "src/index.js",
+  "type": "module",
+  "capacitor": {
+    "android": {
+      "src": "android"
+    }
+  },
+  "files": [
+    "android/src/main/",
+    "android/build.gradle",
+    "src/"
+  ],
+  "peerDependencies": {
+    "@capacitor/core": ">=6.0.0"
+  }
+}
