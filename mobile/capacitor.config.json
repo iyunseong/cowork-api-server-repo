@@ -1,0 +1,9 @@
+{
+  "appId": "com.kskill.ktxmacro",
+  "appName": "KTX 자동예매",
+  "webDir": "www",
+  "plugins": {
+    "CapacitorHttp": { "enabled": true },
+    "CapacitorCookies": { "enabled": true }
+  }
+}
