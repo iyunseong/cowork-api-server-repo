@@ -138,11 +138,15 @@ async function doSearch() {
     await saveForm();
     const trip = collectTrip();
     const k = await makeClient();
+    // Show the WHOLE schedule — including sold-out and waiting-list trains — so
+    // the user can point the macro at a full train and wait for a seat to open.
     const trains = await k.searchTrain(trip.dep, trip.arr, trip.date, trip.time, {
-      trainType: trainTypeCode(trip.trainType), passengers: trip.passengers, includeWaitingList: trip.tryWaiting,
+      trainType: trainTypeCode(trip.trainType), passengers: trip.passengers,
+      includeNoSeats: true, includeWaitingList: true,
     });
     renderTrains(trains);
-    status.textContent = `${trains.length}개 열차 조회됨`;
+    const open = trains.filter((t) => t.has_seat()).length;
+    status.textContent = `${trains.length}개 열차 · 예약 가능 ${open}개 (매진 열차는 자동예매 대기 가능)`;
   } catch (e) {
     status.className = "status-line err";
     status.textContent = e.message || String(e);
@@ -160,12 +164,15 @@ function renderTrains(trains) {
   for (const t of trains) {
     const el = document.createElement("div");
     el.className = "train";
-    const seat = t.has_seat() ? '<span class="seat-ok">예약 가능</span>' : (t.has_waiting_list() ? '<span class="seat-no">예약 대기</span>' : '<span class="seat-no">매진</span>');
+    const hasSeat = t.has_seat();
+    const seat = hasSeat ? '<span class="seat-ok">예약 가능</span>' : (t.has_waiting_list() ? '<span class="seat-no">예약 대기</span>' : '<span class="seat-no">매진</span>');
     el.innerHTML = `<div><div class="times">${fmtTime(t.dep_time)} → ${fmtTime(t.arr_time)}</div>
       <div class="meta">${t.train_type_name} ${t.train_no}호 · ${t.dep_name}→${t.arr_name} · ${seat}</div></div>`;
     const btn = document.createElement("button");
     btn.className = "primary";
-    btn.textContent = "이 열차 매크로";
+    // Every train — even sold-out — is a valid macro target; the loop keeps
+    // retrying until a seat opens.
+    btn.textContent = hasSeat ? "이 열차 예매" : "자동예매 대기";
     btn.onclick = () => startMacro(buildTrainId(t));
     el.appendChild(btn);
     box.appendChild(el);

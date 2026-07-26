@@ -68,6 +68,19 @@ test("specific-train mode reserves the matching train_id", async () => {
   assert.equal(result.reservation.price, 59800);
 });
 
+test("specific SOLD-OUT train retries until a seat opens, then reserves", async () => {
+  const korail = clientThatOpensAfter(2); // target train is sold out for 2 searches
+  const trainId = buildTrainId(parseTrain(seatState(false))); // train_id ignores seat status
+  const updates = [];
+  const result = await runMacro(
+    { korail, dep: "서울", arr: "부산", date: "20260801", time: "090000", trainType: "100", trainId, passengers: buildPassengers({ adults: 1 }), intervalMs: 1 },
+    { onUpdate: (u) => updates.push(u), sleep: async () => {} }
+  );
+  assert.equal(result.status, "reserved");
+  assert.ok(result.attempts >= 3, "should retry the sold-out train until it opens");
+  assert.ok(updates.some((u) => /좌석이 없어/.test(u.message || "")), "should report waiting while sold out");
+});
+
 test("shouldStop halts the loop", async () => {
   const korail = clientThatOpensAfter(1000); // never opens
   let ticks = 0;
