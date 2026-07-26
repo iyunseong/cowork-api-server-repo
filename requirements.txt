@@ -1,0 +1,5 @@
+# Python dependencies for the KTX booking helper (ktx/ktx_booking.py).
+# Install with:  python3 -m pip install -r requirements.txt
+korail2-ncard
+pycryptodome
+requests

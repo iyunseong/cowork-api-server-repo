@@ -1,0 +1,20 @@
+{
+  "name": "KTX 자동 예매",
+  "short_name": "KTX 예매",
+  "description": "빈자리를 자동으로 잡아주는 KTX 예매 매크로",
+  "start_url": "/ktx/",
+  "scope": "/ktx/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0e1420",
+  "theme_color": "#0b3d91",
+  "lang": "ko",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -6,6 +6,8 @@ const db = require("./models");
 
 const { Member } = db;
 
+const ktx = require("./ktx/router");
+
 // middleware
 app.use(express.json());
 
@@ -13,6 +15,10 @@ app.use((req, res, next) => {
   console.log(req.query);
   next();
 });
+
+// KTX booking mobile app + API (served under /ktx and /api/ktx).
+// Registered before the member routes; it does not touch the database.
+ktx.register(app);
 
 app.get("/api/members", async (req, res) => {
   const { team } = req.query;
