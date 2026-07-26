@@ -240,7 +240,8 @@ async function startMacro(trainId) {
   }
 
   // Read the interval FRESH each start so edits take effect on restart.
-  const intervalMs = Math.max(10, parseInt($("intervalSec").value, 10) || 15) * 1000;
+  // Floor at 5s (anti-bot); default 5s.
+  const intervalMs = Math.max(5, parseInt($("intervalSec").value, 10) || 5) * 1000;
   const maxMinutes = Math.max(1, parseInt($("maxMinutes").value, 10) || 60);
 
   const myRun = ++runSeq;

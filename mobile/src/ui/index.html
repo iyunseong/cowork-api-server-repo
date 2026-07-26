@@ -74,7 +74,12 @@
       </section>
 
       <section class="card">
-        <h2>3 · 열차 조회</h2>
+        <h2>3 · 조회 & 자동예매 설정</h2>
+        <div class="row">
+          <label>자동예매 조회 간격(초) <input id="intervalSec" type="number" min="5" max="300" value="5" /></label>
+          <label>최대 시간(분) <input id="maxMinutes" type="number" min="1" max="720" value="60" /></label>
+        </div>
+        <p class="hint">간격은 자동예매 시작 <b>전에</b> 설정하세요. 최소 5초(코레일/SRT anti-bot 정책상 그 이하는 권장하지 않음).</p>
         <button id="search-btn" class="primary">열차 조회</button>
         <div id="search-status" class="status-line"></div>
         <div id="results"></div>
@@ -82,10 +87,6 @@
 
       <section class="card">
         <h2>4 · 자동 예매 매크로</h2>
-        <div class="row">
-          <label>조회 간격(초) <input id="intervalSec" type="number" min="10" max="300" value="15" /></label>
-          <label>최대 시간(분) <input id="maxMinutes" type="number" min="1" max="720" value="60" /></label>
-        </div>
         <button id="auto-btn" class="primary">가장 빠른 빈자리 자동 예매</button>
         <p class="hint">특정 열차를 지정하려면 위 조회 결과에서 <b>이 열차 매크로</b>를 누르세요. 앱을 내려도 백그라운드로 계속 시도하며, 성공 시 알림을 보냅니다.</p>
         <div id="job-panel" class="job hidden">
@@ -97,7 +98,7 @@
 
       <p class="footer">
         결제는 자동화하지 않습니다. 예약 성공 시 코레일 앱/홈페이지에서 결제하세요.<br />
-        과도한 반복 조회는 피합니다(간격 하한 10초). 개인 용도로만 사용하세요.
+        과도한 반복 조회는 피합니다(간격 하한 5초). 개인 용도로만 사용하세요.
       </p>
     </main>
 
