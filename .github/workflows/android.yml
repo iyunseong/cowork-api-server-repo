@@ -9,6 +9,11 @@ on:
       - ".github/workflows/android.yml"
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release로 발행할 태그명 (예: v1.0.0). 비우면 Release를 만들지 않고 APK 아티팩트만 생성."
+        required: false
+        default: ""
 
 jobs:
   test:
@@ -70,8 +75,27 @@ jobs:
         with:
           name: ktx-auto-booking-apk
           path: ktx-auto-booking.apk
-      - name: Attach APK to Release (on tag)
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Read version
+        id: ver
+        run: echo "tag=$(cat mobile/VERSION)" >> "$GITHUB_OUTPUT"
+      - name: Publish APK to a Release
+        # Publishes when: a v* tag is pushed, dispatched with release_tag, or a
+        # branch push whose commit message contains [release]. softprops creates
+        # the tag + release server-side (GITHUB_TOKEN), so no local tag push is
+        # needed (the sandbox git proxy blocks tag pushes).
+        if: >-
+          startsWith(github.ref, 'refs/tags/v') ||
+          (github.event_name == 'workflow_dispatch' && inputs.release_tag != '') ||
+          contains(github.event.head_commit.message, '[release]')
         uses: softprops/action-gh-release@v2
         with:
           files: ktx-auto-booking.apk
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || (inputs.release_tag != '' && inputs.release_tag) || steps.ver.outputs.tag }}
+          name: KTX 자동 예매 ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || (inputs.release_tag != '' && inputs.release_tag) || steps.ver.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          body: |
+            폰에 설치하는 KTX 자동 예매 앱입니다.
+
+            **설치:** 아래 `ktx-auto-booking.apk`를 폰으로 받아 실행 → "출처를 알 수 없는 앱 설치" 허용 후 설치하세요(디버그 서명 경고는 정상).
+
+            결제는 자동화하지 않습니다. 예약 성공 후 코레일 앱에서 결제하세요.
