@@ -49,7 +49,7 @@ test("auto mode retries while sold out then reserves", async () => {
   const korail = clientThatOpensAfter(2); // sold out for 2 searches, seat on 3rd
   const updates = [];
   const result = await runMacro(
-    { korail, dep: "서울", arr: "부산", date: "20260801", time: "090000", trainType: "100", passengers: buildPassengers({ adults: 1 }), intervalMs: 1 },
+    { client: korail, dep: "서울", arr: "부산", date: "20260801", time: "090000", trainType: "100", passengers: buildPassengers({ adults: 1 }), intervalMs: 1 },
     { onUpdate: (u) => updates.push(u), sleep: async () => {} }
   );
   assert.equal(result.status, "reserved");
@@ -61,7 +61,7 @@ test("specific-train mode reserves the matching train_id", async () => {
   const korail = clientThatOpensAfter(0); // seat immediately
   const trainId = buildTrainId(parseTrain(seatState(true)));
   const result = await runMacro(
-    { korail, dep: "서울", arr: "부산", date: "20260801", time: "090000", trainType: "100", trainId, passengers: buildPassengers({ adults: 1 }), intervalMs: 1 },
+    { client: korail, dep: "서울", arr: "부산", date: "20260801", time: "090000", trainType: "100", trainId, passengers: buildPassengers({ adults: 1 }), intervalMs: 1 },
     { sleep: async () => {} }
   );
   assert.equal(result.status, "reserved");
@@ -73,7 +73,7 @@ test("specific SOLD-OUT train retries until a seat opens, then reserves", async 
   const trainId = buildTrainId(parseTrain(seatState(false))); // train_id ignores seat status
   const updates = [];
   const result = await runMacro(
-    { korail, dep: "서울", arr: "부산", date: "20260801", time: "090000", trainType: "100", trainId, passengers: buildPassengers({ adults: 1 }), intervalMs: 1 },
+    { client: korail, dep: "서울", arr: "부산", date: "20260801", time: "090000", trainType: "100", trainId, passengers: buildPassengers({ adults: 1 }), intervalMs: 1 },
     { onUpdate: (u) => updates.push(u), sleep: async () => {} }
   );
   assert.equal(result.status, "reserved");
@@ -85,7 +85,7 @@ test("shouldStop halts the loop", async () => {
   const korail = clientThatOpensAfter(1000); // never opens
   let ticks = 0;
   const result = await runMacro(
-    { korail, dep: "서울", arr: "부산", date: "20260801", time: "090000", trainType: "100", passengers: buildPassengers(), intervalMs: 1 },
+    { client: korail, dep: "서울", arr: "부산", date: "20260801", time: "090000", trainType: "100", passengers: buildPassengers(), intervalMs: 1 },
     { sleep: async () => {}, shouldStop: () => ++ticks > 3 }
   );
   assert.equal(result.status, "stopped");

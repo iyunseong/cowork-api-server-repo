@@ -1,30 +1,36 @@
 // Korail error types, mirroring korail2's error classes and their h_msg_cd
 // code sets so the macro loop can classify failures by type (not by string).
 
+// `kind` gives macro.js an operator-agnostic way to classify failures
+// (matches the SRT client's error.kind): 'auth' | 'soldout' | 'noresults' | 'other'.
 export class KorailError extends Error {
   constructor(msg, code) {
     super(`${msg} (${code})`);
     this.name = "KorailError";
     this.msg = msg;
     this.code = code;
+    this.kind = "other";
   }
 }
 export class NeedToLoginError extends KorailError {
   constructor(code = null) {
     super("Need to Login", code);
     this.name = "NeedToLoginError";
+    this.kind = "auth";
   }
 }
 export class NoResultsError extends KorailError {
   constructor(code = null) {
     super("No Results", code);
     this.name = "NoResultsError";
+    this.kind = "noresults";
   }
 }
 export class SoldOutError extends KorailError {
   constructor(code = null) {
     super("Sold out", code);
     this.name = "SoldOutError";
+    this.kind = "soldout";
   }
 }
 

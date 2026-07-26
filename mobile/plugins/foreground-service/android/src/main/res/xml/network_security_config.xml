@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- SRT's NetFunnel queue (nf.letskorail.com) is served over cleartext HTTP.
+         Allow cleartext for just that domain; everything else stays HTTPS-only. -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">letskorail.com</domain>
+    </domain-config>
+</network-security-config>

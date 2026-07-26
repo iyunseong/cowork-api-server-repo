@@ -16,10 +16,12 @@ mkdirSync(www, { recursive: true });
 
 // UI shell (index.html, styles.css) at the www root.
 cpSync(join(src, "ui"), www, { recursive: true });
-// App + macro modules at the root so their relative imports resolve.
+// App + macro + client factory at the root so their relative imports resolve.
 cpSync(join(src, "app.js"), join(www, "app.js"));
 cpSync(join(src, "macro.js"), join(www, "macro.js"));
-// Korail client tree under www/korail/.
+cpSync(join(src, "client.js"), join(www, "client.js"));
+// Operator client trees.
 cpSync(join(src, "korail"), join(www, "korail"), { recursive: true });
+cpSync(join(src, "srt"), join(www, "srt"), { recursive: true });
 
 console.log("www/ built:", www);

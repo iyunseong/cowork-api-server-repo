@@ -1,23 +1,13 @@
-// Retry-until-reserved macro loop, ported from the server version
-// (ktx/macro.js) to run on-device against the JS Korail client.
+// Retry-until-reserved macro loop. Operator-agnostic: it drives any client
+// (Korail/KTX or SRT) that exposes searchTrain / reserve / findTrainById and
+// throws errors carrying a `kind` ('auth' | 'soldout' | 'noresults' | ...).
 //
-// Pure and injectable (korail client, sleep, shouldStop, onUpdate) so it can be
-// unit-tested in Node and driven by the Android glue in app.js. Assumes the
-// client is already logged in.
-
-import { findTrainById, RESERVE_OPTION } from "./korail/korail.js";
-import { SoldOutError, NoResultsError, NeedToLoginError } from "./korail/errors.js";
-
-const SEAT_OPTION = {
-  "general-first": RESERVE_OPTION.GENERAL_FIRST,
-  "general-only": RESERVE_OPTION.GENERAL_ONLY,
-  "special-first": RESERVE_OPTION.SPECIAL_FIRST,
-  "special-only": RESERVE_OPTION.SPECIAL_ONLY,
-};
+// Pure and injectable (client, sleep, shouldStop, onUpdate) so it can be
+// unit-tested in Node. Assumes the client is already logged in.
 
 export async function runMacro(job, hooks) {
   const {
-    korail, dep, arr, date, time,
+    client, dep, arr, date, time,
     trainType = "100", trainId = null, passengers,
     seatOption = "general-first", tryWaiting = false,
     intervalMs = 15000, deadlineMs = null, maxAttempts = null,
@@ -25,7 +15,6 @@ export async function runMacro(job, hooks) {
   } = job;
   const { onUpdate = () => {}, shouldStop = () => false, sleep } = hooks;
 
-  const option = SEAT_OPTION[seatOption] || RESERVE_OPTION.GENERAL_FIRST;
   const wantSpecial = seatOption.startsWith("special");
   const mode = trainId ? "train" : "auto";
   let attempts = 0;
@@ -45,7 +34,7 @@ export async function runMacro(job, hooks) {
 
     try {
       if (mode === "auto") {
-        const trains = await korail.searchTrain(dep, arr, date, time, {
+        const trains = await client.searchTrain(dep, arr, date, time, {
           trainType, passengers, includeWaitingList: tryWaiting,
         });
         target = trains.find((t) => (wantSpecial ? t.has_special_seat() || t.has_general_seat() : t.has_general_seat() || t.has_special_seat()));
@@ -56,10 +45,10 @@ export async function runMacro(job, hooks) {
         }
         onUpdate({ status: "running", attempts, message: `빈 좌석 발견: ${target.dep_time.slice(0, 4)} 예약 시도…` });
       } else {
-        const trains = await korail.searchTrain(dep, arr, date, time, {
+        const trains = await client.searchTrain(dep, arr, date, time, {
           trainType, passengers, includeNoSeats: true, includeWaitingList: tryWaiting,
         });
-        target = findTrainById(trains, trainId);
+        target = client.findTrainById(trains, trainId);
         if (!target) return finish("failed", "선택한 열차가 더 이상 조회되지 않습니다(운행 종료/시간표 변경).");
         const reservable = target.has_seat() || (tryWaiting && target.has_general_waiting_list());
         if (!reservable) {
@@ -69,14 +58,15 @@ export async function runMacro(job, hooks) {
         }
       }
 
-      const reservation = await korail.reserve(target, { passengers, option, tryWaiting });
-      return finish("reserved", "예약에 성공했습니다. 코레일 앱에서 결제해 주세요.", reservation);
+      const reservation = await client.reserve(target, { passengers, seatOption, tryWaiting });
+      return finish("reserved", "예약에 성공했습니다. 코레일/SRT 앱에서 결제해 주세요.", reservation);
     } catch (e) {
-      if (e instanceof NeedToLoginError) return finish("failed", "로그인이 만료되었습니다. 다시 로그인해 주세요.");
-      if (e instanceof SoldOutError || e instanceof NoResultsError) {
+      const kind = e && e.kind;
+      if (kind === "auth") return finish("failed", "로그인이 만료되었습니다. 다시 로그인해 주세요.");
+      if (kind === "soldout" || kind === "noresults") {
         onUpdate({ status: "running", attempts, message: "좌석이 없어 재시도 중…" });
       } else {
-        onUpdate({ status: "running", attempts, message: `일시 오류, 재시도 중… (${e.message || e})` });
+        onUpdate({ status: "running", attempts, message: `일시 오류, 재시도 중… (${(e && e.message) || e})` });
       }
       await sleep(intervalMs);
     }

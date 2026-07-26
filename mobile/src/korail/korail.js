@@ -297,7 +297,15 @@ export class Korail {
     return this.searchTrainDetails(dep, arr, date, time, opts);
   }
 
-  async reserve(train, { passengers, option = RESERVE_OPTION.GENERAL_FIRST, tryWaiting = false } = {}) {
+  async reserve(train, { passengers, option, seatOption, tryWaiting = false } = {}) {
+    // Accept either an internal `option` or the UI's `seatOption` string.
+    const SEAT_OPTION_MAP = {
+      "general-first": RESERVE_OPTION.GENERAL_FIRST,
+      "general-only": RESERVE_OPTION.GENERAL_ONLY,
+      "special-first": RESERVE_OPTION.SPECIAL_FIRST,
+      "special-only": RESERVE_OPTION.SPECIAL_ONLY,
+    };
+    if (!option) option = SEAT_OPTION_MAP[seatOption] || RESERVE_OPTION.GENERAL_FIRST;
     let reservingSeat = true;
     let seatType;
     try {
@@ -403,6 +411,17 @@ export class Korail {
       for (const info of Array.isArray(infos) ? infos : [infos]) out.push(parseReservation(info));
     }
     return out;
+  }
+
+  // Unified interface shared with the SRT client (used by macro.js / app.js).
+  findTrainById(trains, id) {
+    return findTrainById(trains, id);
+  }
+  buildTrainId(train) {
+    return buildTrainId(train);
+  }
+  makePassengers(opts) {
+    return buildPassengers(opts);
   }
 
   async cancel(reservation) {

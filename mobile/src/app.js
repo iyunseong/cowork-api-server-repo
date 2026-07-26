@@ -1,11 +1,11 @@
-// Android glue: wires the UI to the on-device Korail client + macro loop, using
-// Capacitor native plugins (HTTP, Preferences, LocalNotifications, and a local
-// ForegroundService plugin so the macro survives backgrounding).
+// Android glue: wires the UI to the on-device KTX/SRT clients + macro loop,
+// using Capacitor native plugins (HTTP, Preferences, LocalNotifications, and a
+// local ForegroundService plugin so the macro survives backgrounding).
 //
-// Pure logic (korail.js, macro.js) is unit-tested in Node; this file is the
-// thin, device-only integration layer.
+// Pure logic (korail/*, srt/*, macro.js) is unit-tested in Node; this file is
+// the thin, device-only integration layer.
 
-import { Korail, buildTrainId, buildPassengers } from "./korail/korail.js";
+import { createClient, stationsFor, OPERATORS } from "./client.js";
 import { runMacro } from "./macro.js";
 
 const Cap = window.Capacitor || {};
@@ -20,7 +20,7 @@ const FORM_KEY = "ktx.form";
 
 const $ = (id) => document.getElementById(id);
 
-// ---- native HTTP adapter (matches korail.js's http interface) ------------
+// ---- native HTTP adapter (shared by both clients) ------------------------
 function strMap(obj) {
   if (!obj) return undefined;
   const out = {};
@@ -35,16 +35,10 @@ const http = {
       h["Content-Type"] = h["Content-Type"] || "application/x-www-form-urlencoded";
       body = strMap(data);
     }
-    const res = await CapacitorHttp.request({
-      method,
-      url,
-      params: strMap(params),
-      data: body,
-      headers: h,
-    });
+    const res = await CapacitorHttp.request({ method, url, params: strMap(params), data: body, headers: h });
     let parsed = res.data;
     if (typeof parsed === "string") {
-      try { parsed = JSON.parse(parsed); } catch (_) { /* leave as string */ }
+      try { parsed = JSON.parse(parsed); } catch (_) { /* leave as string (e.g. NetFunnel) */ }
     }
     return { status: res.status, data: parsed };
   },
@@ -65,6 +59,22 @@ async function prefRemove(key) {
   await Preferences.remove({ key });
 }
 
+// ---- operator ------------------------------------------------------------
+function operator() {
+  return $("operator").value === "srt" ? "srt" : "ktx";
+}
+function refreshStations() {
+  const list = $("stations");
+  list.innerHTML = "";
+  for (const s of stationsFor(operator())) {
+    const opt = document.createElement("option");
+    opt.value = s;
+    list.appendChild(opt);
+  }
+  // KTX has train-type choices; SRT does not.
+  $("trainTypeRow").style.display = operator() === "srt" ? "none" : "";
+}
+
 // ---- form <-> state ------------------------------------------------------
 function collectTrip() {
   return {
@@ -74,20 +84,21 @@ function collectTrip() {
     time: (($("time").value || "").replace(/:/g, "") + "0000").slice(0, 6),
     trainType: $("trainType").value,
     seatOption: $("seatOption").value,
-    passengers: buildPassengers({
+    tryWaiting: $("tryWaiting").checked,
+    passengerCounts: {
       adults: parseInt($("adults").value, 10) || 0,
       children: parseInt($("children").value, 10) || 0,
       seniors: parseInt($("seniors").value, 10) || 0,
-    }),
-    tryWaiting: $("tryWaiting").checked,
+    },
   };
 }
 function trainTypeCode(key) {
-  return { ktx: "100", "itx-saemaeul": "101", mugunghwa: "102", nuriro: "102", "tonggeun": "103", "itx-cheongchun": "104", airport: "105", all: "109" }[key] || "100";
+  return { ktx: "100", "itx-saemaeul": "101", mugunghwa: "102", nuriro: "102", tonggeun: "103", "itx-cheongchun": "104", airport: "105", all: "109" }[key] || "100";
 }
 
 async function saveForm() {
   await prefSet(FORM_KEY, {
+    operator: $("operator").value,
     dep: $("dep").value, arr: $("arr").value, date: $("date").value, time: $("time").value,
     trainType: $("trainType").value, seatOption: $("seatOption").value,
     adults: $("adults").value, children: $("children").value, seniors: $("seniors").value,
@@ -103,15 +114,15 @@ async function saveForm() {
 async function restore() {
   const f = await prefGet(FORM_KEY);
   if (f) {
+    if (f.operator && $("operator")) $("operator").value = f.operator;
     for (const k of ["dep", "arr", "date", "time", "trainType", "seatOption", "adults", "children", "seniors", "intervalSec", "maxMinutes"]) {
       if (f[k] != null && $(k)) $(k).value = f[k];
     }
     $("tryWaiting").checked = !!f.tryWaiting;
     $("remember").checked = !!f.remember;
   }
-  if (!$("date").value) {
-    $("date").value = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
-  }
+  refreshStations();
+  if (!$("date").value) $("date").value = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
   const creds = await prefGet(CREDS_KEY);
   if (creds) { $("id").value = creds.id || ""; $("password").value = creds.password || ""; }
 }
@@ -120,11 +131,15 @@ async function restore() {
 async function makeClient() {
   const id = $("id").value.trim();
   const pw = $("password").value;
-  if (!id || !pw) throw new Error("코레일 아이디와 비밀번호를 입력하세요.");
-  const k = new Korail(http);
-  const ok = await k.login(id, pw);
-  if (!ok) throw new Error("로그인 실패 — 아이디/비밀번호를 확인하세요.");
-  return k;
+  if (!id || !pw) throw new Error("아이디와 비밀번호를 입력하세요.");
+  const client = createClient(operator(), http);
+  const ok = await client.login(id, pw); // SRT throws on failure; Korail returns false
+  if (ok === false) throw new Error("로그인 실패 — 아이디/비밀번호를 확인하세요.");
+  return client;
+}
+
+function trainTypeForSearch(trip) {
+  return operator() === "srt" ? "srt" : trainTypeCode(trip.trainType);
 }
 
 // ---- search --------------------------------------------------------------
@@ -137,13 +152,12 @@ async function doSearch() {
   try {
     await saveForm();
     const trip = collectTrip();
-    const k = await makeClient();
-    // Show the WHOLE schedule — including sold-out and waiting-list trains — so
-    // the user can point the macro at a full train and wait for a seat to open.
-    const trains = await k.searchTrain(trip.dep, trip.arr, trip.date, trip.time, {
-      trainType: trainTypeCode(trip.trainType), passengers: trip.passengers,
-      includeNoSeats: true, includeWaitingList: true,
+    const client = await makeClient();
+    const passengers = client.makePassengers(trip.passengerCounts);
+    const trains = await client.searchTrain(trip.dep, trip.arr, trip.date, trip.time, {
+      trainType: trainTypeForSearch(trip), passengers, includeNoSeats: true, includeWaitingList: true,
     });
+    for (const t of trains) t._id = client.buildTrainId(t);
     renderTrains(trains);
     const open = trains.filter((t) => t.has_seat()).length;
     status.textContent = `${trains.length}개 열차 · 예약 가능 ${open}개 (매진 열차는 자동예매 대기 가능)`;
@@ -170,17 +184,16 @@ function renderTrains(trains) {
       <div class="meta">${t.train_type_name} ${t.train_no}호 · ${t.dep_name}→${t.arr_name} · ${seat}</div></div>`;
     const btn = document.createElement("button");
     btn.className = "primary";
-    // Every train — even sold-out — is a valid macro target; the loop keeps
-    // retrying until a seat opens.
     btn.textContent = hasSeat ? "이 열차 예매" : "자동예매 대기";
-    btn.onclick = () => startMacro(buildTrainId(t));
+    btn.onclick = () => startMacro(t._id);
     el.appendChild(btn);
     box.appendChild(el);
   }
 }
 
 // ---- macro ---------------------------------------------------------------
-let current = null; // { stop, promise }
+let current = null; // { stop }
+let runSeq = 0; // ignore stale updates from a superseded run
 
 async function ensureNotifPermission() {
   if (!LocalNotifications) return;
@@ -189,16 +202,13 @@ async function ensureNotifPermission() {
     if (s.display !== "granted") await LocalNotifications.requestPermissions();
   } catch (_) {}
 }
-
 async function startForeground(text) {
   if (!ForegroundService) return;
-  try {
-    await ForegroundService.start({ title: "KTX 자동 예매", body: text || "빈자리 조회 중…", id: 1 });
-  } catch (_) {}
+  try { await ForegroundService.start({ title: "자동 예매 실행 중", body: text || "빈자리 조회 중…", id: 1 }); } catch (_) {}
 }
 async function updateForeground(text) {
   if (!ForegroundService || !ForegroundService.update) return;
-  try { await ForegroundService.update({ title: "KTX 자동 예매", body: text, id: 1 }); } catch (_) {}
+  try { await ForegroundService.update({ title: "자동 예매 실행 중", body: text, id: 1 }); } catch (_) {}
 }
 async function stopForeground() {
   if (!ForegroundService) return;
@@ -206,16 +216,10 @@ async function stopForeground() {
 }
 
 async function notifyReserved(reservation, trip) {
-  const body = `${trip.dep}→${trip.arr} · 예약번호 ${reservation.reservation_id} · 코레일 앱에서 결제하세요.`;
+  const body = `${trip.dep}→${trip.arr} · 예약번호 ${reservation.reservation_id} · 앱에서 결제하세요.`;
   if (LocalNotifications) {
     try {
-      await LocalNotifications.schedule({
-        notifications: [{
-          id: Math.floor(Date.now() % 100000),
-          title: "🎉 KTX 예약 완료!",
-          body,
-        }],
-      });
+      await LocalNotifications.schedule({ notifications: [{ id: Math.floor(Date.now() % 100000), title: "🎉 예약 완료!", body }] });
     } catch (_) {}
   }
   try { navigator.vibrate && navigator.vibrate([300, 120, 300]); } catch (_) {}
@@ -223,57 +227,72 @@ async function notifyReserved(reservation, trip) {
 
 async function startMacro(trainId) {
   if (current) { alert("이미 매크로가 실행 중입니다. 먼저 중지하세요."); return; }
-  let trip, korail;
+  let trip, client, passengers;
   try {
     await saveForm();
     trip = collectTrip();
     await ensureNotifPermission();
-    korail = await makeClient();
+    client = await makeClient();
+    passengers = client.makePassengers(trip.passengerCounts);
   } catch (e) {
     alert(e.message || String(e));
     return;
   }
 
+  // Read the interval FRESH each start so edits take effect on restart.
   const intervalMs = Math.max(10, parseInt($("intervalSec").value, 10) || 15) * 1000;
   const maxMinutes = Math.max(1, parseInt($("maxMinutes").value, 10) || 60);
 
+  const myRun = ++runSeq;
   let stopped = false;
-  const shouldStop = () => stopped;
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const shouldStop = () => stopped || myRun !== runSeq;
+  // Interruptible sleep: wake early on stop so "중지" is immediate and a restart
+  // isn't blocked by the previous run still sleeping on its old interval.
+  const sleep = (ms) => new Promise((resolve) => {
+    const start = Date.now();
+    (function tick() {
+      if (shouldStop() || Date.now() - start >= ms) return resolve();
+      setTimeout(tick, 250);
+    })();
+  });
+
+  const handle = { stop: () => { stopped = true; } };
+  current = handle;
 
   showJob({ status: "running", attempts: 0, message: "매크로를 시작했습니다." }, trip);
   await startForeground("빈자리 조회 중…");
 
-  const run = runMacro(
+  runMacro(
     {
-      korail, dep: trip.dep, arr: trip.arr, date: trip.date, time: trip.time,
-      trainType: trainTypeCode(trip.trainType), trainId, passengers: trip.passengers,
+      client, dep: trip.dep, arr: trip.arr, date: trip.date, time: trip.time,
+      trainType: trainTypeForSearch(trip), trainId, passengers,
       seatOption: trip.seatOption, tryWaiting: trip.tryWaiting,
       intervalMs, deadlineMs: Date.now() + maxMinutes * 60000,
     },
     {
       sleep, shouldStop,
       onUpdate: (u) => {
+        if (myRun !== runSeq) return; // superseded — ignore stale updates
         showJob(u, trip);
         if (u.status === "running" && u.message) updateForeground(u.message);
       },
     }
   ).then(async (result) => {
-    current = null;
+    if (current === handle) current = null;
     await stopForeground();
-    if (result.status === "reserved") await notifyReserved(result.reservation, trip);
-    showJob(result, trip);
+    if (myRun === runSeq) {
+      if (result.status === "reserved") await notifyReserved(result.reservation, trip);
+      showJob(result, trip);
+    }
   }).catch(async (e) => {
-    current = null;
+    if (current === handle) current = null;
     await stopForeground();
-    showJob({ status: "failed", message: e.message || String(e), attempts: 0 }, trip);
+    if (myRun === runSeq) showJob({ status: "failed", message: e.message || String(e), attempts: 0 }, trip);
   });
-
-  current = { stop: () => { stopped = true; }, promise: run };
 }
 
 function stopMacro() {
-  if (current) current.stop();
+  if (current) { current.stop(); current = null; } // clear now so restart works immediately
 }
 
 function showJob(job, trip) {
@@ -290,7 +309,7 @@ function showJob(job, trip) {
     msg.innerHTML = '<span class="spinner"></span>' + (job.message || "대기 중…");
   } else if (job.status === "reserved" && job.reservation) {
     const r = job.reservation;
-    msg.innerHTML = `✅ 예약번호 <b>${r.reservation_id}</b> · ${r.price ? r.price + "원" : ""}<br>구입기한 ${r.buy_limit_date || ""} ${r.buy_limit_time ? fmtTime(r.buy_limit_time) : ""} — 코레일 앱에서 결제하세요.`;
+    msg.innerHTML = `✅ 예약번호 <b>${r.reservation_id}</b> · ${r.price ? r.price + "원" : ""}<br>구입기한 ${r.buy_limit_date || ""} ${r.buy_limit_time ? fmtTime(r.buy_limit_time) : ""} — 앱에서 결제하세요.`;
   } else {
     msg.textContent = job.message || "";
   }
@@ -303,10 +322,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     $("search-status").textContent = "네이티브 HTTP 플러그인을 찾을 수 없습니다. 앱을 다시 설치해 주세요.";
   }
   await restore();
+  $("operator").addEventListener("change", () => { refreshStations(); saveForm(); });
   $("search-btn").addEventListener("click", doSearch);
   $("auto-btn").addEventListener("click", () => startMacro(null));
   $("stop-btn").addEventListener("click", stopMacro);
-  document.querySelectorAll("input,select").forEach((el) => {
-    el.addEventListener("change", saveForm);
-  });
+  document.querySelectorAll("input,select").forEach((el) => el.addEventListener("change", saveForm));
 });

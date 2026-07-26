@@ -15,12 +15,18 @@
 
     <main>
       <section class="card">
-        <h2>1 · 코레일 로그인</h2>
+        <h2>1 · 운영사 & 로그인</h2>
+        <label>운영사
+          <select id="operator">
+            <option value="ktx">KTX (코레일)</option>
+            <option value="srt">SRT (수서고속철)</option>
+          </select>
+        </label>
         <label>아이디 (회원번호·이메일·휴대폰)
           <input id="id" type="text" autocomplete="username" placeholder="예: 010-1234-5678" />
         </label>
         <label>비밀번호
-          <input id="password" type="password" autocomplete="current-password" placeholder="코레일 비밀번호" />
+          <input id="password" type="password" autocomplete="current-password" placeholder="계정 비밀번호" />
         </label>
         <label class="check">
           <input id="remember" type="checkbox" /> 이 기기에 로그인 정보 기억 (기기 내부에만 저장)
@@ -33,20 +39,14 @@
           <label>출발역 <input id="dep" type="text" list="stations" placeholder="서울" /></label>
           <label>도착역 <input id="arr" type="text" list="stations" placeholder="부산" /></label>
         </div>
-        <datalist id="stations">
-          <option value="서울"></option><option value="용산"></option><option value="광명"></option>
-          <option value="천안아산"></option><option value="오송"></option><option value="대전"></option>
-          <option value="동대구"></option><option value="부산"></option><option value="울산"></option>
-          <option value="포항"></option><option value="광주송정"></option><option value="목포"></option>
-          <option value="여수엑스포"></option><option value="강릉"></option><option value="남춘천"></option>
-          <option value="행신"></option>
-        </datalist>
+        <!-- Populated by app.js based on the selected operator (KTX vs SRT stations). -->
+        <datalist id="stations"></datalist>
         <div class="row">
           <label>날짜 <input id="date" type="date" /></label>
           <label>이 시각 이후 <input id="time" type="time" value="09:00" /></label>
         </div>
         <div class="row">
-          <label>열차 종류
+          <label id="trainTypeRow">열차 종류
             <select id="trainType">
               <option value="ktx">KTX / KTX-산천</option>
               <option value="itx-saemaeul">ITX-새마을</option>
