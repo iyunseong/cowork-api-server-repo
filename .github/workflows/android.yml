@@ -53,6 +53,14 @@ jobs:
           java-version: "17"
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+      - name: Use the repo's fixed debug signing key
+        # Every CI run otherwise generates a RANDOM debug keystore, so each APK
+        # gets a different signature and Android refuses to install one over
+        # another ("앱이 설치되지 않음"). Copy the committed keystore so all
+        # builds share one signature and updates install in place.
+        run: |
+          mkdir -p "$HOME/.android"
+          cp mobile/signing/debug.keystore "$HOME/.android/debug.keystore"
       - name: Install mobile deps
         working-directory: mobile
         run: npm install
