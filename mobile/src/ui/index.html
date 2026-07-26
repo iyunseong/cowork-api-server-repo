@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <title>KTX 자동 예매</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="brand"><span class="logo">🚄</span><h1>KTX 자동 예매</h1></div>
+      <p class="subtitle">빈자리를 자동으로 잡아드려요 · 결제는 코레일 앱에서</p>
+    </header>
+
+    <main>
+      <section class="card">
+        <h2>1 · 코레일 로그인</h2>
+        <label>아이디 (회원번호·이메일·휴대폰)
+          <input id="id" type="text" autocomplete="username" placeholder="예: 010-1234-5678" />
+        </label>
+        <label>비밀번호
+          <input id="password" type="password" autocomplete="current-password" placeholder="코레일 비밀번호" />
+        </label>
+        <label class="check">
+          <input id="remember" type="checkbox" /> 이 기기에 로그인 정보 기억 (기기 내부에만 저장)
+        </label>
+      </section>
+
+      <section class="card">
+        <h2>2 · 여정</h2>
+        <div class="row">
+          <label>출발역 <input id="dep" type="text" list="stations" placeholder="서울" /></label>
+          <label>도착역 <input id="arr" type="text" list="stations" placeholder="부산" /></label>
+        </div>
+        <datalist id="stations">
+          <option value="서울"></option><option value="용산"></option><option value="광명"></option>
+          <option value="천안아산"></option><option value="오송"></option><option value="대전"></option>
+          <option value="동대구"></option><option value="부산"></option><option value="울산"></option>
+          <option value="포항"></option><option value="광주송정"></option><option value="목포"></option>
+          <option value="여수엑스포"></option><option value="강릉"></option><option value="남춘천"></option>
+          <option value="행신"></option>
+        </datalist>
+        <div class="row">
+          <label>날짜 <input id="date" type="date" /></label>
+          <label>이 시각 이후 <input id="time" type="time" value="09:00" /></label>
+        </div>
+        <div class="row">
+          <label>열차 종류
+            <select id="trainType">
+              <option value="ktx">KTX / KTX-산천</option>
+              <option value="itx-saemaeul">ITX-새마을</option>
+              <option value="itx-cheongchun">ITX-청춘</option>
+              <option value="mugunghwa">무궁화호</option>
+              <option value="nuriro">누리로</option>
+              <option value="all">전체</option>
+            </select>
+          </label>
+          <label>좌석
+            <select id="seatOption">
+              <option value="general-first">일반실 우선</option>
+              <option value="general-only">일반실만</option>
+              <option value="special-first">특실 우선</option>
+              <option value="special-only">특실만</option>
+            </select>
+          </label>
+        </div>
+        <div class="row">
+          <label>성인 <input id="adults" type="number" min="0" max="9" value="1" /></label>
+          <label>어린이 <input id="children" type="number" min="0" max="9" value="0" /></label>
+          <label>경로 <input id="seniors" type="number" min="0" max="9" value="0" /></label>
+        </div>
+        <label class="check"><input id="tryWaiting" type="checkbox" /> 좌석이 없으면 <b>예약 대기</b>까지 시도</label>
+      </section>
+
+      <section class="card">
+        <h2>3 · 열차 조회</h2>
+        <button id="search-btn" class="primary">열차 조회</button>
+        <div id="search-status" class="status-line"></div>
+        <div id="results"></div>
+      </section>
+
+      <section class="card">
+        <h2>4 · 자동 예매 매크로</h2>
+        <div class="row">
+          <label>조회 간격(초) <input id="intervalSec" type="number" min="10" max="300" value="15" /></label>
+          <label>최대 시간(분) <input id="maxMinutes" type="number" min="1" max="720" value="60" /></label>
+        </div>
+        <button id="auto-btn" class="primary">가장 빠른 빈자리 자동 예매</button>
+        <p class="hint">특정 열차를 지정하려면 위 조회 결과에서 <b>이 열차 매크로</b>를 누르세요. 앱을 내려도 백그라운드로 계속 시도하며, 성공 시 알림을 보냅니다.</p>
+        <div id="job-panel" class="job hidden">
+          <div class="job-head"><span id="job-badge" class="badge">실행 중</span><button id="stop-btn" class="ghost small">중지</button></div>
+          <div id="job-detail" class="job-detail"></div>
+          <div id="job-message" class="job-message"></div>
+        </div>
+      </section>
+
+      <p class="footer">
+        결제는 자동화하지 않습니다. 예약 성공 시 코레일 앱/홈페이지에서 결제하세요.<br />
+        과도한 반복 조회는 피합니다(간격 하한 10초). 개인 용도로만 사용하세요.
+      </p>
+    </main>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

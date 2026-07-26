@@ -1,0 +1,75 @@
+name: Build KTX macro APK
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "mobile/**"
+      - "ktx/ktx_booking.py"
+      - ".github/workflows/android.yml"
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Verify Korail port (JS vs Python)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Python reference deps
+        run: python3 -m pip install korail2-ncard pycryptodome
+      - name: Install mobile deps
+        working-directory: mobile
+        run: npm install
+      - name: Run parity + logic tests
+        working-directory: mobile
+        run: npm test
+
+  build-apk:
+    name: Build debug APK
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Install mobile deps
+        working-directory: mobile
+        run: npm install
+      - name: Build web assets
+        working-directory: mobile
+        run: npm run build
+      - name: Add Android platform
+        working-directory: mobile
+        run: npx cap add android
+      - name: Sync Capacitor
+        working-directory: mobile
+        run: npx cap sync android
+      - name: Assemble debug APK
+        working-directory: mobile/android
+        run: ./gradlew assembleDebug --no-daemon
+      - name: Rename APK
+        run: cp mobile/android/app/build/outputs/apk/debug/app-debug.apk ktx-auto-booking.apk
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ktx-auto-booking-apk
+          path: ktx-auto-booking.apk
+      - name: Attach APK to Release (on tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ktx-auto-booking.apk
