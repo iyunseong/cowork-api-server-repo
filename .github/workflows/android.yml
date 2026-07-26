@@ -28,7 +28,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install Python reference deps
-        run: python3 -m pip install korail2-ncard pycryptodome
+        run: python3 -m pip install korail2-ncard pycryptodome SRTrain
       - name: Install mobile deps
         working-directory: mobile
         run: npm install
