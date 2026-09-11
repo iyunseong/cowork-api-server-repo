@@ -9,24 +9,24 @@
   </head>
   <body>
     <header class="app-header">
-      <div class="brand"><span class="logo">🚄</span><h1>KTX 자동 예매</h1></div>
+      <div class="brand"><span class="logo">🚄</span><h1>KTX·SRT 자동 예매</h1></div>
       <p class="subtitle">빈자리를 자동으로 잡아드려요 · 결제는 코레일 앱에서</p>
     </header>
 
     <main>
       <section class="card">
-        <h2>1 · 운영사 & 로그인</h2>
+        <h2>1 · 코레일+ 로그인</h2>
         <label>운영사
           <select id="operator">
-            <option value="ktx">KTX (코레일)</option>
-            <option value="srt">SRT (수서고속철)</option>
+            <option value="ktx">코레일+ (KTX·SRT 통합)</option>
           </select>
         </label>
-        <label>아이디 (회원번호·이메일·휴대폰)
+        <p class="hint">2026년 코레일+ 통합으로 <b>SRT도 코레일 통합계정</b>으로 예매합니다. SRT 열차를 잡으려면 아래 열차 종류를 <b>전체(SRT 포함)</b>로 두고 수서·동탄·평택지제 등에서 조회하세요.</p>
+        <label>아이디 (코레일 통합회원: 회원번호·이메일·휴대폰)
           <input id="id" type="text" autocomplete="username" placeholder="예: 010-1234-5678" />
         </label>
         <label>비밀번호
-          <input id="password" type="password" autocomplete="current-password" placeholder="계정 비밀번호" />
+          <input id="password" type="password" autocomplete="current-password" placeholder="코레일 통합회원 비밀번호" />
         </label>
         <label class="check">
           <input id="remember" type="checkbox" /> 이 기기에 로그인 정보 기억 (기기 내부에만 저장)
@@ -48,12 +48,12 @@
         <div class="row">
           <label id="trainTypeRow">열차 종류
             <select id="trainType">
+              <option value="all">전체 (KTX·SRT 포함)</option>
               <option value="ktx">KTX / KTX-산천</option>
               <option value="itx-saemaeul">ITX-새마을</option>
               <option value="itx-cheongchun">ITX-청춘</option>
               <option value="mugunghwa">무궁화호</option>
               <option value="nuriro">누리로</option>
-              <option value="all">전체</option>
             </select>
           </label>
           <label>좌석
