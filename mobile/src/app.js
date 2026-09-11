@@ -64,15 +64,25 @@ function operator() {
   return $("operator").value === "srt" ? "srt" : "ktx";
 }
 function refreshStations() {
+  const op = operator();
+  const stations = stationsFor(op);
   const list = $("stations");
   list.innerHTML = "";
-  for (const s of stationsFor(operator())) {
+  for (const s of stations) {
     const opt = document.createElement("option");
     opt.value = s;
     list.appendChild(opt);
   }
+  // SRT and KTX serve different stations. Clear any station that the newly
+  // selected operator doesn't serve (e.g. "서울" is not an SRT station), so a
+  // leftover KTX station doesn't make SRT search fail silently.
+  const valid = new Set(stations);
+  if ($("dep").value && !valid.has($("dep").value.trim())) $("dep").value = "";
+  if ($("arr").value && !valid.has($("arr").value.trim())) $("arr").value = "";
+  $("dep").placeholder = op === "srt" ? "수서" : "서울";
+  $("arr").placeholder = "부산";
   // KTX has train-type choices; SRT does not.
-  $("trainTypeRow").style.display = operator() === "srt" ? "none" : "";
+  $("trainTypeRow").style.display = op === "srt" ? "none" : "";
 }
 
 // ---- form <-> state ------------------------------------------------------

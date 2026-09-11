@@ -59,7 +59,14 @@ export class NetFunnel {
   }
 
   async _get(params) {
-    const res = await this.http.request({ method: "GET", url: NF_URL, params, headers: HEADERS });
+    let res;
+    try {
+      res = await this.http.request({ method: "GET", url: NF_URL, params, headers: HEADERS });
+    } catch (e) {
+      const err = new Error("SRT 대기열 서버(nf.letskorail.com) 연결 실패 — 네트워크/보안설정을 확인하세요.");
+      err.kind = "netfunnel";
+      throw err;
+    }
     return parseNetFunnel(typeof res.data === "string" ? res.data : JSON.stringify(res.data));
   }
 
@@ -81,7 +88,11 @@ export class NetFunnel {
       [String(Date.now())]: "",
     });
     let key = parsed.key;
-    if (!key) throw new Error("NetFunnel key not found in response");
+    if (!key) {
+      const err = new Error("SRT 대기열 키 수신 실패 — 잠시 후 다시 시도하세요.");
+      err.kind = "netfunnel";
+      throw err;
+    }
     if (parsed.status === STATUS_FAIL) {
       key = await this._waitUntilComplete(key, parsed.nwait || "?", 0);
     }
