@@ -98,3 +98,43 @@ test("reserve posts seat payload and returns the reloaded reservation", async ()
   assert.equal(rsv.price, 59800);
   assert.equal(rsv.buy_limit_time, "093000");
 });
+
+test("reservations() normalizes pending reservations (구입기한/금액)", async () => {
+  const http = mockHttp([
+    ["reservation.ReservationView", {
+      strResult: "SUCC",
+      jrny_infos: { jrny_info: [{ train_infos: { train_info: [{
+        h_pnr_no: "PNR777", h_trn_no: "123", h_trn_clsf_nm: "KTX",
+        h_dpt_rs_stn_nm: "서울", h_arv_rs_stn_nm: "부산", h_run_dt: "20260901",
+        h_dpt_tm: "080000", h_arv_tm: "103000", h_tot_seat_cnt: "2",
+        h_rsv_amt: "119600", h_ntisu_lmt_dt: "20260831", h_ntisu_lmt_tm: "230000",
+        txtJrnySqno: "001", txtJrnyCnt: "01",
+      }] } }] },
+    }],
+  ]);
+  const k = new Korail(http);
+  k.key = "KEY";
+  const list = await k.reservations();
+  assert.equal(list.length, 1);
+  assert.equal(list[0].reservation_id, "PNR777");
+  assert.equal(list[0].price, 119600);
+  assert.equal(list[0].seat_count, 2);
+  assert.equal(list[0].buy_limit_date, "20260831");
+  assert.equal(list[0].buy_limit_time, "230000");
+  assert.equal(list[0].journey_no, "001");
+});
+
+test("cancel() sends the reservation identifiers and succeeds", async () => {
+  const http = mockHttp([
+    ["reservationCancel.ReservationCancelChk", (req) => {
+      assert.equal(req.params.txtPnrNo, "PNR777");
+      assert.equal(req.params.txtJrnySqno, "001");
+      assert.equal(req.params.txtJrnyCnt, "01");
+      return { strResult: "SUCC" };
+    }],
+  ]);
+  const k = new Korail(http);
+  k.key = "KEY";
+  const ok = await k.cancel({ reservation_id: "PNR777", journey_no: "001", journey_cnt: "01", rsv_chg_no: "00000" });
+  assert.equal(ok, true);
+});

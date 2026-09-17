@@ -321,8 +321,82 @@ function showJob(job, trip) {
   } else if (job.status === "reserved" && job.reservation) {
     const r = job.reservation;
     msg.innerHTML = `✅ 예약번호 <b>${r.reservation_id}</b> · ${r.price ? r.price + "원" : ""}<br>구입기한 ${r.buy_limit_date || ""} ${r.buy_limit_time ? fmtTime(r.buy_limit_time) : ""} — 앱에서 결제하세요.`;
+    const go = document.createElement("button");
+    go.className = "ghost small";
+    go.style.marginTop = "8px";
+    go.textContent = "내 예약에서 확인";
+    go.onclick = () => { $("rsv-section").scrollIntoView({ behavior: "smooth" }); loadReservations(); };
+    msg.appendChild(document.createElement("br"));
+    msg.appendChild(go);
   } else {
     msg.textContent = job.message || "";
+  }
+}
+
+// ---- my reservations (결제 대기) -----------------------------------------
+function fmtDate(d) {
+  return d && d.length === 8 ? `${d.slice(4, 6)}/${d.slice(6, 8)}` : (d || "");
+}
+function limitPassed(r) {
+  if (!r.buy_limit_date || !r.buy_limit_time) return false;
+  const d = r.buy_limit_date, t = r.buy_limit_time;
+  const at = new Date(+d.slice(0, 4), +d.slice(4, 6) - 1, +d.slice(6, 8), +t.slice(0, 2), +t.slice(2, 4));
+  return Date.now() > at.getTime();
+}
+
+async function loadReservations() {
+  const status = $("rsv-status");
+  const box = $("rsv-list");
+  $("rsv-btn").disabled = true;
+  status.className = "status-line";
+  status.innerHTML = '<span class="spinner"></span>로그인/조회 중…';
+  box.innerHTML = "";
+  try {
+    await saveForm();
+    const client = await makeClient();
+    if (typeof client.reservations !== "function") throw new Error("이 운영사는 예약 조회를 지원하지 않습니다.");
+    const list = await client.reservations();
+    renderReservations(list, client);
+    status.textContent = list.length ? `${list.length}건 — 결제는 코레일+ 앱에서 진행하세요.` : "예약(결제 대기) 내역이 없습니다.";
+  } catch (e) {
+    status.className = "status-line err";
+    status.textContent = e.message || String(e);
+  } finally {
+    $("rsv-btn").disabled = false;
+  }
+}
+
+function renderReservations(list, client) {
+  const box = $("rsv-list");
+  box.innerHTML = "";
+  for (const r of list) {
+    const el = document.createElement("div");
+    el.className = "train";
+    const expired = limitPassed(r);
+    if (expired) el.style.opacity = "0.55";
+    el.innerHTML = `<div>
+      <div class="times">${fmtDate(r.dep_date)} ${fmtTime(r.dep_time || "0000")} → ${r.arr_time ? fmtTime(r.arr_time) : ""}</div>
+      <div class="meta">${r.train_type || ""} ${r.train_no || ""}호 · ${r.dep_name}→${r.arr_name} · ${r.seat_count || ""}석 · ${r.price ? r.price.toLocaleString() + "원" : ""}</div>
+      <div class="meta">예약번호 <b>${r.reservation_id}</b> · 결제 마감 <b>${fmtDate(r.buy_limit_date)} ${r.buy_limit_time ? fmtTime(r.buy_limit_time) : ""}</b>${expired ? " (마감 지남)" : ""}</div>
+    </div>`;
+    const btn = document.createElement("button");
+    btn.className = "ghost small";
+    btn.textContent = "예약 취소";
+    btn.onclick = () => cancelReservation(r, client);
+    el.appendChild(btn);
+    box.appendChild(el);
+  }
+}
+
+async function cancelReservation(r, client) {
+  // Real-account mutation: always confirm first.
+  if (!confirm(`예약번호 ${r.reservation_id} (${r.dep_name}→${r.arr_name})을(를) 취소할까요?\n취소하면 되돌릴 수 없습니다.`)) return;
+  try {
+    await client.cancel(r);
+    alert("취소되었습니다.");
+    await loadReservations();
+  } catch (e) {
+    alert("취소 실패: " + (e.message || e));
   }
 }
 
@@ -337,5 +411,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("search-btn").addEventListener("click", doSearch);
   $("auto-btn").addEventListener("click", () => startMacro(null));
   $("stop-btn").addEventListener("click", stopMacro);
+  $("rsv-btn").addEventListener("click", loadReservations);
   document.querySelectorAll("input,select").forEach((el) => el.addEventListener("change", saveForm));
 });
