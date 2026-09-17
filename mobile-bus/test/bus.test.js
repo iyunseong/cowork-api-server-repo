@@ -135,3 +135,84 @@ test("Tmoney: mocked search → reserve prepares the WebView hold form", async (
   assert.equal(f.cty_Bus_Dc_Knd_Cd, "Z");
   assert.ok(rsv.checkout.action.endsWith("/otck/readPcpySats.do"));
 });
+
+test("KOBUS: sold-out departure without a button is listed and targetable by time", async () => {
+  const html = ref.kobus.searchHtml.replace("</ul>", '<li class="alcn"><span class="time">13:00</span> <span class="cacm">중앙고속</span> <span class="cls">우등</span> <span class="seat">매진</span></li></ul>');
+  const http = { async request(req) {
+    if (req.url.endsWith("/main.do")) return { status: 200, data: "<html/>" };
+    if (req.url.includes("alcnSrch.do")) return { status: 200, data: html };
+    throw new Error("no mock " + req.url);
+  } };
+  const c = new K.Kobus(http);
+  const all = await c.searchTrain("010", "700", "20260509", "000000", { includeNoSeats: true });
+  const so = all.find((t) => t.dep_time === "130000");
+  assert.ok(so && so.placeholder, "13:00 sold-out row should appear as a placeholder");
+  assert.equal(so.has_seat(), false);
+  const id = await c.targetId("010", "700", "20260509", "130000");
+  assert.equal(c.findTrainById(all, id), so); // manual time target matches the listed sold-out row
+  assert.equal(c.findTrainById(all, await c.targetId("010", "700", "20260509", "235900")).has_seat(), false); // unlisted → still waits
+});
+
+// ---------- time window / terminal discovery ----------
+import { scanTerminalPairs, findTerminal } from "../src/bus/terminals.js";
+
+test("time window: timeMax keeps only departures inside [time, timeMax]", async () => {
+  const html = ref.kobus.searchHtml.replace("</ul>", '<li class="alcn"><span class="time">13:00</span> 매진</li><li class="alcn"><span class="time">18:30</span> 매진</li></ul>');
+  const http = { async request(req) {
+    if (req.url.endsWith("/main.do")) return { status: 200, data: "<html/>" };
+    if (req.url.includes("alcnSrch.do")) return { status: 200, data: html };
+    throw new Error("no mock " + req.url);
+  } };
+  const c = new K.Kobus(http);
+  const all = await c.searchTrain("010", "700", "20260509", "000000", { includeNoSeats: true });
+  assert.deepEqual(all.map((t) => t.dep_time), ["003000", "070000", "130000", "183000"]);
+  const win = await c.searchTrain("010", "700", "20260509", "070000", { includeNoSeats: true, timeMax: "130059" });
+  assert.deepEqual(win.map((t) => t.dep_time), ["070000", "130000"]);
+  const t = new T.Tmoney({ async request(req) {
+    if (req.url.includes("trmlInfEnty")) return { status: 200, data: "<html/>" };
+    if (req.url.includes("readAlcnList")) return { status: 200, data: ref.tmoney.ttHtml };
+    throw new Error("no mock " + req.url);
+  } });
+  const tAll = await t.searchTrain("0511601", "2482701", "20260509", "000000", { includeNoSeats: true });
+  assert.ok(tAll.length >= 2);
+  const first = tAll[0].dep_time;
+  const tWin = await t.searchTrain("0511601", "2482701", "20260509", "000000", { includeNoSeats: true, timeMax: first });
+  assert.deepEqual(tWin.map((x) => x.dep_time), [first]);
+});
+
+test("terminal scanner recognises option / JS-args / JSON shapes", () => {
+  const html = `
+    <select><option value="0511601">동서울</option><option value="2482701">속초</option></select>
+    <a onclick="fnSelTrml('3001101','부산')">부산</a>
+    <li data-trml-cd="3001201" class="x">서부산(사상)</li>
+    var list = [{"trmlCd":"1801101","trmlNm":"목포"},{"trml_Nm":"광주(유스퀘어)","trml_Cd":"2000101"}];
+    other('부산', '3001101') stray 1234567 number`;
+  const pairs = scanTerminalPairs(html, 7);
+  const byCode = Object.fromEntries(pairs.map((p) => [p.code, p.name]));
+  assert.deepEqual(byCode, {
+    "0511601": "동서울", "2482701": "속초", "3001101": "부산", "3001201": "서부산(사상)",
+    "1801101": "목포", "2000101": "광주(유스퀘어)",
+  });
+  assert.equal(findTerminal(pairs, "서부산").code, "3001201");
+});
+
+test("Tmoney: unknown terminal name triggers a runtime directory scan, then search proceeds", async () => {
+  const urls = [];
+  const http = { async request(req) {
+    urls.push(req.url);
+    if (req.url.includes("trmlInfEnty")) return { status: 200, data: '<option value="0511601">동서울</option><option value="3001101">부산</option>' };
+    if (req.url.includes("readAlcnList")) {
+      assert.equal(req.data.arvl_Trml_Cd, "3001101");
+      assert.equal(req.data.arvl_Trml_Nm, "부산");
+      return { status: 200, data: ref.tmoney.ttHtml };
+    }
+    if (req.url.includes("/main.do") || /Trml/.test(req.url)) return { status: 404, data: "<html>not found</html>" };
+    throw new Error("no mock " + req.url);
+  } };
+  const c = new T.Tmoney(http);
+  const rows = await c.searchTrain("동서울", "부산", "20260509", "000000", { includeNoSeats: true });
+  assert.ok(rows.length >= 1);
+  assert.ok(c.lastResolveDiag.length >= 4);
+  await assert.rejects(() => c.searchTrain("동서울", "없는터미널", "20260509"), /찾을 수 없습니다.*부산\(3001101\)/);
+  assert.equal(urls.filter((u) => u.includes("trmlInfEnty")).length, 2); // session GET + one directory scan (not repeated)
+});

@@ -63,18 +63,23 @@ function refreshTerminals() {
   $("dep").placeholder = op === "kobus" ? "서울경부 또는 코드 010" : "동서울 또는 코드 0511601";
   $("arr").placeholder = op === "kobus" ? "부산 또는 코드 700" : "속초 또는 코드 2482701";
   $("code-hint").textContent = `터미널 이름(목록) 또는 ${digits}자리 코드를 입력하세요.`;
-  $("load-terminals").style.display = op === "kobus" ? "" : "none";
 }
 
 async function loadTerminals() {
   const btn = $("load-terminals");
+  const op = operator();
   btn.disabled = true; btn.textContent = "불러오는 중…";
   try {
-    const c = createClient("kobus", http);
-    const list = await c.resolveTerminals();
-    terminalsByOp.kobus = list;
+    const c = createClient(op, http);
+    const q = ($("dep").value || $("arr").value || "").trim();
+    const list = await c.resolveTerminals(/^\d+$/.test(q) ? "" : q);
+    terminalsByOp[op] = list;
     refreshTerminals();
     btn.textContent = `터미널 ${list.length}곳 불러옴`;
+    if (op === "tmoney" && list.length <= OPERATORS.tmoney.terminals.length) {
+      const diag = (c.lastResolveDiag || []).join("\n");
+      alert("사이트에서 터미널 목록을 찾지 못했습니다. 아래 진단 내용을 개발자에게 보내주세요:\n" + diag);
+    }
   } catch (e) {
     btn.textContent = "터미널 목록 불러오기";
     alert("터미널 목록을 불러오지 못했습니다: " + (e.message || e));
@@ -94,11 +99,12 @@ async function saveForm() {
   await prefSet(FORM_KEY, {
     operator: $("operator").value, dep: $("dep").value, arr: $("arr").value, date: $("date").value, time: $("time").value,
     adults: $("adults").value, intervalSec: $("intervalSec").value, maxMinutes: $("maxMinutes").value,
+    targetTime: $("targetTime").value, winFrom: $("winFrom").value, winTo: $("winTo").value,
   });
 }
 async function restore() {
   const f = await prefGet(FORM_KEY);
-  if (f) for (const k of ["operator", "dep", "arr", "date", "time", "adults", "intervalSec", "maxMinutes"]) if (f[k] != null && $(k)) $(k).value = f[k];
+  if (f) for (const k of ["operator", "dep", "arr", "date", "time", "adults", "intervalSec", "maxMinutes", "targetTime", "winFrom", "winTo"]) if (f[k] != null && $(k)) $(k).value = f[k];
   refreshTerminals();
   if (!$("date").value) $("date").value = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
 }
@@ -184,7 +190,8 @@ function openCheckout(checkout) {
   form.submit();
 }
 
-async function startMacro(trainId) {
+// win = { from: "HHMMSS", to: "HHMMSS" } → auto mode limited to that departure window.
+async function startMacro(trainId, win = null) {
   if (current) { alert("이미 실행 중입니다. 먼저 중지하세요."); return; }
   let trip, client;
   try {
@@ -204,11 +211,15 @@ async function startMacro(trainId) {
   const handle = { stop: () => { stopped = true; } };
   current = handle;
 
+  if (win) trip.label = `${fmtTime(win.from)}~${fmtTime(win.to)} 사이 아무 편`;
+  else if (trainId) trip.label = "지정 편 대기";
+  else trip.label = `${fmtTime(trip.time)} 이후 가장 빠른 편`;
   showJob({ status: "running", attempts: 0, message: "자동선점을 시작했습니다." }, trip);
   await fg("start", "빈자리 조회 중…");
 
   runMacro(
-    { client, dep: trip.dep, arr: trip.arr, date: trip.date, time: trip.time, trainId,
+    { client, dep: trip.dep, arr: trip.arr, date: trip.date, time: trainId ? "000000" : win ? win.from : trip.time, trainId,
+      timeMax: win ? win.to : null,
       passengers: client.makePassengers({ adults: trip.adults }), seatOption: "general-first", tryWaiting: false,
       intervalMs, deadlineMs: Date.now() + maxMinutes * 60000 },
     { sleep, shouldStop, onUpdate: (u) => { if (myRun !== runSeq) return; showJob(u, trip); if (u.status === "running" && u.message) fg("update", u.message); } }
@@ -232,6 +243,30 @@ async function startMacro(trainId) {
 
 function stopMacro() { if (current) { current.stop(); current = null; } }
 
+// Target a departure by time — works even when the sold-out departure is not
+// listed (no booking button). The macro keeps polling until a seat appears.
+async function startTargetMacro() {
+  const hhmm = ($("targetTime").value || "").replace(/:/g, "");
+  if (hhmm.length !== 4) { alert("노릴 출발시각을 입력하세요 (예: 14:30)"); return; }
+  try {
+    const trip = collectTrip();
+    if (!trip.dep || !trip.arr) throw new Error("출발/도착 터미널을 입력하세요.");
+    const client = createClient(operator(), http);
+    const id = await client.targetId(trip.dep, trip.arr, trip.date, hhmm + "00");
+    await startMacro(id);
+  } catch (e) { alert(e.message || String(e)); }
+}
+
+// "HH:MM ~ HH:MM 사이 아무 편": auto mode with a departure window. The macro
+// grabs the earliest departure inside the window that has a seat.
+async function startWindowMacro() {
+  const from = ($("winFrom").value || "").replace(/:/g, "");
+  const to = ($("winTo").value || "").replace(/:/g, "");
+  if (from.length !== 4 || to.length !== 4) { alert("시작·끝 시각을 모두 입력하세요 (예: 13:00 ~ 16:00)"); return; }
+  if (from > to) { alert("끝 시각이 시작 시각보다 빨라요."); return; }
+  await startMacro(null, { from: from + "00", to: to + "59" });
+}
+
 function showJob(job, trip) {
   $("job-panel").classList.remove("hidden");
   const labels = { running: "실행 중", reserved: "선점 성공", failed: "실패", stopped: "중지됨" };
@@ -239,7 +274,7 @@ function showJob(job, trip) {
   badge.textContent = labels[job.status] || job.status;
   badge.className = "badge " + job.status;
   $("stop-btn").style.display = job.status === "running" ? "" : "none";
-  $("job-detail").innerHTML = `구간: <b>${trip.dep} → ${trip.arr}</b> · ${trip.date} ${fmtTime(trip.time)} 이후 · 시도 <b>${job.attempts || 0}</b>회`;
+  $("job-detail").innerHTML = `구간: <b>${trip.dep} → ${trip.arr}</b> · ${trip.date} · ${trip.label || fmtTime(trip.time) + " 이후"} · 시도 <b>${job.attempts || 0}</b>회`;
   const msg = $("job-message");
   if (job.status === "running") {
     msg.innerHTML = '<span class="spinner"></span>' + (job.message || "대기 중…");
@@ -277,6 +312,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("load-terminals").addEventListener("click", loadTerminals);
   $("search-btn").addEventListener("click", doSearch);
   $("auto-btn").addEventListener("click", () => startMacro(null));
+  $("target-btn").addEventListener("click", startTargetMacro);
+  $("window-btn").addEventListener("click", startWindowMacro);
   $("stop-btn").addEventListener("click", stopMacro);
   document.querySelectorAll("input,select").forEach((el) => el.addEventListener("change", saveForm));
 });

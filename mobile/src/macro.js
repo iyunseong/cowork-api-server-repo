@@ -8,7 +8,7 @@
 export async function runMacro(job, hooks) {
   const {
     client, dep, arr, date, time,
-    trainType = "100", trainId = null, passengers,
+    trainType = "100", trainId = null, passengers, timeMax = null,
     seatOption = "general-first", tryWaiting = false,
     intervalMs = 15000, deadlineMs = null, maxAttempts = null,
     now = () => Date.now(),
@@ -35,7 +35,7 @@ export async function runMacro(job, hooks) {
     try {
       if (mode === "auto") {
         const trains = await client.searchTrain(dep, arr, date, time, {
-          trainType, passengers, includeWaitingList: tryWaiting,
+          trainType, passengers, includeWaitingList: tryWaiting, timeMax,
         });
         target = trains.find((t) => (wantSpecial ? t.has_special_seat() || t.has_general_seat() : t.has_general_seat() || t.has_special_seat()));
         if (!target) {

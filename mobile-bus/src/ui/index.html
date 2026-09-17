@@ -29,7 +29,7 @@
         <datalist id="terminals"></datalist>
         <p class="hint" id="code-hint">터미널 이름(목록) 또는 코드를 입력하세요.</p>
         <button id="load-terminals" class="ghost small">터미널 목록 불러오기</button>
-        <p class="hint">로그인 없이 조회·선점됩니다. 목록에 없는 터미널은 코버스/티머니 사이트에서 노선을 고를 때 보이는 코드를 직접 입력하세요.</p>
+        <p class="hint">로그인 없이 조회·선점됩니다. 이름이 목록에 없으면 조회 시 사이트에서 자동으로 찾아보고, 그래도 없으면 <b>터미널 목록 불러오기</b>를 누르거나 코버스/티머니 사이트에 보이는 코드를 직접 입력하세요.</p>
       </section>
 
       <section class="card">
@@ -55,7 +55,18 @@
 
       <section class="card">
         <h2>4 · 자동 선점</h2>
-        <button id="auto-btn" class="primary">가장 빠른 빈자리 자동 선점</button>
+        <div class="row">
+          <label>노릴 출발시각 (매진 편도 OK) <input id="targetTime" type="time" /></label>
+        </div>
+        <button id="target-btn" class="primary">이 시각 편 자동선점 대기</button>
+        <p class="hint">매진이라 목록에 안 뜨는 편도 <b>출발시각만 넣으면</b> 대기를 걸 수 있습니다. 자리가 나는 순간 선점합니다.</p>
+        <div class="row" style="margin-top:10px">
+          <label>시작 <input id="winFrom" type="time" /></label>
+          <label>끝 <input id="winTo" type="time" /></label>
+        </div>
+        <button id="window-btn" class="primary">이 시간대 아무 편이나 자동 선점</button>
+        <p class="hint">예: 13:00 ~ 16:00 → 그 사이 출발편 중 <b>자리가 나는 가장 빠른 편</b>을 선점합니다(매진 편만 있어도 계속 대기).</p>
+        <button id="auto-btn" class="primary" style="margin-top:6px">가장 빠른 빈자리 자동 선점 (시각 제한 없음)</button>
         <p class="hint">특정 편을 노리려면 조회 결과에서 <b>자동선점 대기</b>를 누르세요. 앱을 내려도 백그라운드로 계속 시도하고, 자리가 잡히면 알림 후 <b>공식 결제 페이지로 자동 이동</b>합니다. 선점은 몇 분 내 만료되니 바로 결제하세요.</p>
         <div id="job-panel" class="job hidden">
           <div class="job-head"><span id="job-badge" class="badge">실행 중</span><button id="stop-btn" class="ghost small">중지</button></div>

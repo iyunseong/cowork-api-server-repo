@@ -118,10 +118,21 @@ function availableSeats(seatHtml) {
   return seats;
 }
 
+// Identity = route + date + departure time (company intentionally excluded so
+// a user-typed target time matches whichever operator runs that departure).
 export function buildTrainId(t) {
   return TRAIN_ID_PREFIX + b64url(JSON.stringify({
-    op: "kobus", dep: t.dep_code, arr: t.arr_code, date: t.dep_date, dep_time: t.dep_time, company: t.train_no || "",
+    op: "kobus", dep: t.dep_code, arr: t.arr_code, date: t.dep_date, dep_time: t.dep_time,
   }));
+}
+
+// Best-effort: departures rendered WITHOUT a booking button (sold out) —
+// "HH:MM … 매진" within a short span of page text. Returns HHMMSS list.
+export function parseSoldOutTimes(html) {
+  const text = stripTags(String(html));
+  const out = new Set();
+  for (const m of text.matchAll(/(\d{2}):(\d{2})[^\d]{0,120}?매진/g)) out.add(m[1] + m[2] + "00");
+  return [...out];
 }
 
 export class Kobus {
@@ -184,9 +195,36 @@ export class Kobus {
     if (rows.length === 0) throw busError(`시간표를 찾지 못했습니다 [${pageDiag(html)}]. 매진·미운행이거나 사이트가 다른 페이지를 돌려줬습니다.`, "noresults");
 
     let trains = rows.map((r) => this._toTrain(r, d, a, date, searchForm));
+    // Add sold-out departures that have no booking button so they can be targeted.
+    const seen = new Set(trains.map((t) => t.dep_time));
+    for (const hhmmss of parseSoldOutTimes(html)) {
+      if (!seen.has(hhmmss)) trains.push(this._placeholder(d, a, date, hhmmss));
+    }
+    trains.sort((x, y) => x.dep_time.localeCompare(y.dep_time));
     if (time) trains = trains.filter((t) => t.dep_time >= time);
+    if (opts.timeMax) trains = trains.filter((t) => t.dep_time <= opts.timeMax); // "HH:MM ~ HH:MM" window
     if (!opts.includeNoSeats) trains = trains.filter((t) => t.has_seat());
     return trains;
+  }
+
+  _placeholder(d, a, date, hhmmss) {
+    const t = {
+      operator: "kobus", placeholder: true,
+      dep_code: d.code, arr_code: a.code, dep_name: d.name, arr_name: a.name,
+      dep_date: date, dep_time: hhmmss, arr_time: "",
+      train_no: "고속버스", train_type_name: "매진", remaining: 0,
+    };
+    t.has_seat = () => false; t.has_general_seat = () => false; t.has_special_seat = () => false;
+    t.has_general_waiting_list = () => false; t.has_waiting_list = () => false;
+    return t;
+  }
+
+  // train_id for a user-chosen departure time (works even if the departure is
+  // not listed yet because it is sold out).
+  async targetId(dep, arr, date, hhmmss) {
+    const d = await this._code(dep);
+    const a = await this._code(arr);
+    return buildTrainId({ dep_code: d.code, arr_code: a.code, dep_date: date, dep_time: hhmmss });
   }
 
   _toTrain(r, d, a, date, searchForm) {

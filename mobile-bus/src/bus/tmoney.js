@@ -9,8 +9,8 @@
 // Same interface as the KOBUS client / KTX clients for the shared macro.
 
 import { parseForm, fieldsToObject, attrs, stripTags, quotedArgs } from "./http-html.js";
-import { TMONEY_TERMINALS, findTerminal } from "./terminals.js";
-import { busError, pageDiag } from "./kobus.js";
+import { TMONEY_TERMINALS, findTerminal, scanTerminalPairs, mergeTerminals } from "./terminals.js";
+import { busError, pageDiag, parseSoldOutTimes } from "./kobus.js";
 
 const BASE = "https://intercitybus.tmoney.co.kr";
 const ENTRY = `${BASE}/otck/trmlInfEnty.do`;
@@ -82,7 +82,7 @@ export function availableSeats(seatStageHtml) {
 
 export function buildTrainId(t) {
   return TRAIN_ID_PREFIX + b64url(JSON.stringify({
-    op: "tmoney", dep: t.dep_code, arr: t.arr_code, date: t.dep_date, dep_time: t.dep_time, company: t.train_no || "",
+    op: "tmoney", dep: t.dep_code, arr: t.arr_code, date: t.dep_date, dep_time: t.dep_time,
   }));
 }
 
@@ -106,12 +106,54 @@ export class Tmoney {
     this.sessionReady = true;
   }
 
-  _term(v) {
-    const t = findTerminal(this.terminals, v);
+  async _term(v) {
+    const q = String(v || "").trim();
+    if (/^\d{7}$/.test(q)) return findTerminal(this.terminals, q) || { name: q, code: q };
+    let t = findTerminal(this.terminals, q);
     if (t) return t;
-    if (/^\d{7}$/.test(String(v).trim())) return { name: String(v).trim(), code: String(v).trim() };
-    const known = this.terminals.map((x) => `${x.name}(${x.code})`).join(", ");
-    throw busError(`시외버스 터미널 '${String(v).trim()}'을(를) 찾을 수 없습니다. 아는 터미널: ${known} — 티머니 시외버스 사이트의 7자리 터미널 코드를 직접 입력하세요.`, "other");
+    // Unknown name: scan the site's terminal pages once, then retry.
+    if (!this._resolvedOnce) {
+      this._resolvedOnce = true;
+      try { await this.resolveTerminals(q); } catch (_) {}
+      t = findTerminal(this.terminals, q);
+      if (t) return t;
+    }
+    const known = this.terminals.map((x) => `${x.name}(${x.code})`).slice(0, 12).join(", ");
+    throw busError(`시외버스 터미널 '${q}'을(를) 찾을 수 없습니다. 아는 터미널: ${known}${this.terminals.length > 12 ? " …" : ""} — '터미널 목록 불러오기'를 눌러 보거나 티머니 시외버스 사이트의 7자리 터미널 코드를 직접 입력하세요.`, "other");
+  }
+
+  // Best-effort terminal directory. The site is server-rendered and we could
+  // not inspect it offline, so we fetch the pages a browser loads for the
+  // terminal picker plus a few likely ajax endpoints and scan every response
+  // for 7-digit code ↔ Korean name pairs. Unknown endpoints simply fail quietly.
+  async resolveTerminals(query = "") {
+    await this._ensureSession();
+    const attempts = [
+      { method: "GET", url: ENTRY },
+      { method: "GET", url: `${BASE}/main.do` },
+      { method: "POST", url: `${BASE}/otck/readTrmlList.do`, data: { trml_Nm: query, trmlNm: query } },
+      { method: "POST", url: `${BASE}/otck/readTrmlInf.do`, data: { trml_Nm: query, trmlNm: query } },
+      { method: "POST", url: `${BASE}/otck/trmlList.do`, data: { trml_Nm: query, trmlNm: query } },
+      { method: "POST", url: `${BASE}/otck/readDeprTrmlList.do`, data: { trml_Nm: query, trmlNm: query } },
+    ];
+    let found = [];
+    this.lastResolveDiag = [];
+    for (const a of attempts) {
+      try {
+        const res = await this.http.request({
+          method: a.method, url: a.url, data: a.data,
+          headers: this._headers(ENTRY, a.method === "POST" ? { "Content-Type": "application/x-www-form-urlencoded" } : {}),
+        });
+        const body = typeof res.data === "string" ? res.data : JSON.stringify(res.data);
+        const pairs = scanTerminalPairs(body, 7);
+        this.lastResolveDiag.push(`${a.url.replace(BASE, "")}: ${res.status} ${String(body).length}자 → ${pairs.length}곳`);
+        found = found.concat(pairs);
+      } catch (e) {
+        this.lastResolveDiag.push(`${a.url.replace(BASE, "")}: 실패(${e.message || e})`);
+      }
+    }
+    if (found.length) this.terminals = mergeTerminals(this.terminals, found);
+    return this.terminals;
   }
 
   makePassengers({ adults = 1 } = {}) {
@@ -119,8 +161,8 @@ export class Tmoney {
   }
 
   async searchTrain(dep, arr, date, time = "000000", opts = {}) {
-    const d = this._term(dep);
-    const a = this._term(arr);
+    const d = await this._term(dep);
+    const a = await this._term(arr);
     await this._ensureSession();
     const res = await this.http.request({
       method: "POST", url: TIMETABLE,
@@ -137,8 +179,33 @@ export class Tmoney {
       throw busError(`시간표를 찾지 못했습니다 [${pageDiag(html)}]. 코드/날짜를 확인하세요(매진·미운행 가능).`, "noresults");
     }
     let trains = rows.map((r) => this._toTrain(r, d, a, date, time || "000000"));
+    const seen = new Set(trains.map((t) => t.dep_time));
+    for (const hhmmss of parseSoldOutTimes(html)) {
+      if (!seen.has(hhmmss)) trains.push(this._placeholder(d, a, date, hhmmss));
+    }
+    trains.sort((x, y) => x.dep_time.localeCompare(y.dep_time));
+    if (time) trains = trains.filter((t) => t.dep_time >= time);
+    if (opts.timeMax) trains = trains.filter((t) => t.dep_time <= opts.timeMax); // "HH:MM ~ HH:MM" window
     if (!opts.includeNoSeats) trains = trains.filter((t) => t.has_seat());
     return trains;
+  }
+
+  _placeholder(d, a, date, hhmmss) {
+    const t = {
+      operator: "tmoney", placeholder: true,
+      dep_code: d.code, arr_code: a.code, dep_name: d.name, arr_name: a.name,
+      dep_date: date, dep_time: hhmmss, arr_time: "",
+      train_no: "시외버스", train_type_name: "매진", remaining: 0,
+    };
+    t.has_seat = () => false; t.has_general_seat = () => false; t.has_special_seat = () => false;
+    t.has_general_waiting_list = () => false; t.has_waiting_list = () => false;
+    return t;
+  }
+
+  async targetId(dep, arr, date, hhmmss) {
+    const d = await this._term(dep);
+    const a = await this._term(arr);
+    return buildTrainId({ dep_code: d.code, arr_code: a.code, dep_date: date, dep_time: hhmmss });
   }
 
   _toTrain(r, d, a, date, searchTime) {
