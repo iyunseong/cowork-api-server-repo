@@ -1,0 +1,12 @@
+{
+  "appId": "com.kskill.busmacro",
+  "appName": "버스 자동예매",
+  "webDir": "www",
+  "server": {
+    "allowNavigation": ["www.kobus.co.kr", "kobus.co.kr", "intercitybus.tmoney.co.kr"]
+  },
+  "plugins": {
+    "CapacitorHttp": { "enabled": true },
+    "CapacitorCookies": { "enabled": true }
+  }
+}

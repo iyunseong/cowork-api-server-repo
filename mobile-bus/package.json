@@ -1,0 +1,22 @@
+{
+  "name": "bus-macro-mobile",
+  "version": "1.0.0",
+  "description": "고속버스(KOBUS)·시외버스(티머니) 취소표 자동 선점 안드로이드 앱 (Capacitor) — KTX 앱과 별개",
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "build": "node scripts/build-www.js",
+    "sync": "npm run build && cap sync android",
+    "apk": "npm run sync && cd android && ./gradlew assembleDebug"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.1.2",
+    "@capacitor/core": "^6.1.2",
+    "@capacitor/local-notifications": "^6.1.0",
+    "@capacitor/preferences": "^6.0.2",
+    "foreground-service": "file:../mobile/plugins/foreground-service"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.1.2"
+  }
+}

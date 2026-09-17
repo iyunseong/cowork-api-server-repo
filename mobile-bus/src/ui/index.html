@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <title>버스 자동예매</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="brand"><span class="logo">🚌</span><h1>버스 자동예매</h1></div>
+      <p class="subtitle">고속버스·시외버스 취소표를 자동으로 선점 · 결제는 공식 페이지에서</p>
+    </header>
+
+    <main>
+      <section class="card">
+        <h2>1 · 운영사 & 터미널</h2>
+        <label>운영사
+          <select id="operator">
+            <option value="kobus">고속버스 (코버스)</option>
+            <option value="tmoney">시외버스 (티머니)</option>
+          </select>
+        </label>
+        <div class="row">
+          <label>출발 터미널 <input id="dep" type="text" list="terminals" placeholder="서울경부 또는 코드 010" /></label>
+          <label>도착 터미널 <input id="arr" type="text" list="terminals" placeholder="부산 또는 코드 700" /></label>
+        </div>
+        <datalist id="terminals"></datalist>
+        <p class="hint" id="code-hint">터미널 이름(목록) 또는 코드를 입력하세요.</p>
+        <button id="load-terminals" class="ghost small">터미널 목록 불러오기</button>
+        <p class="hint">로그인 없이 조회·선점됩니다. 목록에 없는 터미널은 코버스/티머니 사이트에서 노선을 고를 때 보이는 코드를 직접 입력하세요.</p>
+      </section>
+
+      <section class="card">
+        <h2>2 · 날짜 · 시각 · 인원</h2>
+        <div class="row">
+          <label>날짜 <input id="date" type="date" /></label>
+          <label>이 시각 이후 <input id="time" type="time" value="00:00" /></label>
+        </div>
+        <div class="row">
+          <label>성인 <input id="adults" type="number" min="1" max="1" value="1" /></label>
+          <label>자동선점 조회 간격(초) <input id="intervalSec" type="number" min="5" max="300" value="10" /></label>
+          <label>최대 시간(분) <input id="maxMinutes" type="number" min="1" max="720" value="60" /></label>
+        </div>
+        <p class="hint">선점은 성인 1명 기준입니다. 간격은 자동선점 시작 <b>전에</b> 설정하세요(최소 5초, 기본 10초).</p>
+      </section>
+
+      <section class="card">
+        <h2>3 · 조회</h2>
+        <button id="search-btn" class="primary">시간표 조회</button>
+        <div id="search-status" class="status-line"></div>
+        <div id="results"></div>
+      </section>
+
+      <section class="card">
+        <h2>4 · 자동 선점</h2>
+        <button id="auto-btn" class="primary">가장 빠른 빈자리 자동 선점</button>
+        <p class="hint">특정 편을 노리려면 조회 결과에서 <b>자동선점 대기</b>를 누르세요. 앱을 내려도 백그라운드로 계속 시도하고, 자리가 잡히면 알림 후 <b>공식 결제 페이지로 자동 이동</b>합니다. 선점은 몇 분 내 만료되니 바로 결제하세요.</p>
+        <div id="job-panel" class="job hidden">
+          <div class="job-head"><span id="job-badge" class="badge">실행 중</span><button id="stop-btn" class="ghost small">중지</button></div>
+          <div id="job-detail" class="job-detail"></div>
+          <div id="job-message" class="job-message"></div>
+        </div>
+      </section>
+
+      <p class="footer">
+        결제(카드 입력)는 자동화하지 않습니다. 결제 후 뒤로가기로 앱에 돌아오세요.<br />
+        과도한 반복 조회는 피합니다(간격 하한 5초). 개인 용도로만 사용하세요.
+      </p>
+    </main>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,100 @@
+name: Build bus macro APK
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "mobile-bus/**"
+      - "mobile/src/macro.js"
+      - "mobile/plugins/**"
+      - "mobile/signing/**"
+      - ".github/workflows/android-bus.yml"
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Verify bus parsers (JS vs Python helpers)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run parity + flow tests
+        working-directory: mobile-bus
+        run: npm test
+
+  build-apk:
+    name: Build debug APK (bus)
+    runs-on: ubuntu-latest
+    needs: test
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+      - name: Prepare preinstalled Android SDK
+        run: |
+          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          [ -x "$SDKM" ] || SDKM="$(ls -d $ANDROID_HOME/cmdline-tools/*/bin/sdkmanager | tail -1)"
+          yes | "$SDKM" --licenses >/dev/null 2>&1 || true
+      - name: Use the repo's fixed debug signing key
+        run: |
+          mkdir -p "$HOME/.android"
+          cp mobile/signing/debug.keystore "$HOME/.android/debug.keystore"
+      - name: Install deps
+        working-directory: mobile-bus
+        run: npm install
+      - name: Build web assets
+        working-directory: mobile-bus
+        run: npm run build
+      - name: Add Android platform
+        working-directory: mobile-bus
+        run: npx cap add android
+      - name: Sync Capacitor
+        working-directory: mobile-bus
+        run: npx cap sync android
+      - name: Set app version
+        working-directory: mobile-bus
+        run: |
+          VN=$(cat VERSION | sed 's/^bus-v//')
+          VC=${{ github.run_number }}
+          sed -i -E "s/versionCode [0-9]+/versionCode ${VC}/" android/app/build.gradle
+          sed -i -E "s/versionName \"[^\"]*\"/versionName \"${VN}\"/" android/app/build.gradle
+          grep -nE "versionCode|versionName" android/app/build.gradle
+      - name: Assemble debug APK
+        working-directory: mobile-bus/android
+        run: ./gradlew assembleDebug --no-daemon
+      - name: Rename APK
+        run: cp mobile-bus/android/app/build/outputs/apk/debug/app-debug.apk bus-auto-booking.apk
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bus-auto-booking-apk
+          path: bus-auto-booking.apk
+      - name: Read version
+        id: ver
+        run: echo "tag=$(cat mobile-bus/VERSION)" >> "$GITHUB_OUTPUT"
+      - name: Publish APK to a Release
+        if: contains(github.event.head_commit.message, '[release-bus]')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: bus-auto-booking.apk
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: 버스 자동예매 ${{ steps.ver.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          body: |
+            고속버스(코버스)·시외버스(티머니) 취소표를 자동으로 선점하는 앱입니다. KTX 앱과 별개로 설치됩니다.
+
+            **설치:** `bus-auto-booking.apk`를 폰으로 받아 실행 → "출처를 알 수 없는 앱 설치" 허용 후 설치.
+
+            자리가 잡히면 알림 후 공식 결제 페이지로 이동합니다. 선점은 몇 분 내 만료되니 바로 결제하세요. 결제(카드 입력)는 자동화하지 않습니다.
