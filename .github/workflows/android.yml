@@ -51,8 +51,17 @@ jobs:
         with:
           distribution: "temurin"
           java-version: "17"
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Prepare preinstalled Android SDK
+        # ubuntu-latest ships the Android SDK at $ANDROID_HOME. The
+        # android-actions/setup-android action started failing once the legacy
+        # 'tools' package was dropped from the SDK repository, so just accept
+        # licenses on the preinstalled SDK and let Gradle use it.
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME  ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          [ -x "$SDKM" ] || SDKM="$(ls -d $ANDROID_HOME/cmdline-tools/*/bin/sdkmanager | tail -1)"
+          yes | "$SDKM" --licenses >/dev/null 2>&1 || true
+          "$SDKM" --list_installed 2>/dev/null | grep -E "platforms;|build-tools;" | head
       - name: Use the repo's fixed debug signing key
         # Every CI run otherwise generates a RANDOM debug keystore, so each APK
         # gets a different signature and Android refuses to install one over
