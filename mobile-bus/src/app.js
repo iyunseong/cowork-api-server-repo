@@ -37,7 +37,7 @@ const http = {
       const s = parsed.trim();
       if (s.startsWith("{") || s.startsWith("[")) { try { parsed = JSON.parse(s); } catch (_) { /* keep html/text */ } }
     }
-    return { status: res.status, data: parsed };
+    return { status: res.status, data: parsed, url: res.url || url };
   },
 };
 

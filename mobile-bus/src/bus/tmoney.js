@@ -201,7 +201,8 @@ export class Tmoney {
     const html = typeof res.data === "string" ? res.data : JSON.stringify(res.data);
     const rows = parseSchedules(html);
     if (rows.length === 0) {
-      const err = busError(`시간표를 찾지 못했습니다 [${pageDiag(html)}]. 페이지 내용: "${pageExcerpt(html)}" — 코드/날짜를 확인하세요(매진·미운행 가능).`, "noresults");
+      const redirected = res.url && !String(res.url).includes("readAlcnList") ? ` · 리다이렉트→${String(res.url).replace(BASE, "")}` : "";
+      const err = busError(`시간표를 찾지 못했습니다 [${pageDiag(html)}${redirected} · 상태 ${res.status}]. 페이지 내용: "${pageExcerpt(html)}" — 코드/날짜를 확인하세요(매진·미운행 가능).`, "noresults");
       err.debugHtml = html;
       throw err;
     }
