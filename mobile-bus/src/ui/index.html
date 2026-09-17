@@ -29,6 +29,7 @@
         <datalist id="terminals"></datalist>
         <p class="hint" id="code-hint">터미널 이름(목록) 또는 코드를 입력하세요.</p>
         <button id="load-terminals" class="ghost small">터미널 목록 불러오기</button>
+        <p id="term-diag" class="hint hidden" style="word-break:break-all"></p>
         <p class="hint">로그인 없이 조회·선점됩니다. 이름이 목록에 없으면 조회 시 사이트에서 자동으로 찾아보고, 그래도 없으면 <b>터미널 목록 불러오기</b>를 누르거나 코버스/티머니 사이트에 보이는 코드를 직접 입력하세요.</p>
       </section>
 
@@ -50,6 +51,11 @@
         <h2>3 · 조회</h2>
         <button id="search-btn" class="primary">시간표 조회</button>
         <div id="search-status" class="status-line"></div>
+        <div id="debug-box" class="hidden">
+          <button id="debug-share" class="ghost small">응답 페이지 공유 (개발자용)</button>
+          <p class="hint">사이트가 돌려준 페이지를 파일로 공유합니다. 로그인 정보는 포함되지 않습니다.</p>
+          <textarea id="debug-text" class="hidden" rows="6" style="width:100%;font-size:11px" readonly></textarea>
+        </div>
         <div id="results"></div>
       </section>
 

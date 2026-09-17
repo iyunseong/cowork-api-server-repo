@@ -76,9 +76,10 @@ async function loadTerminals() {
     terminalsByOp[op] = list;
     refreshTerminals();
     btn.textContent = `터미널 ${list.length}곳 불러옴`;
-    if (op === "tmoney" && list.length <= OPERATORS.tmoney.terminals.length) {
-      const diag = (c.lastResolveDiag || []).join("\n");
-      alert("사이트에서 터미널 목록을 찾지 못했습니다. 아래 진단 내용을 개발자에게 보내주세요:\n" + diag);
+    if (c.lastResolveDiag && c.lastResolveDiag.length) {
+      const d = $("term-diag");
+      d.textContent = "조회 기록(개발자용): " + c.lastResolveDiag.join(" | ");
+      d.classList.remove("hidden");
     }
   } catch (e) {
     btn.textContent = "터미널 목록 불러오기";
@@ -131,7 +132,33 @@ async function doSearch() {
   } catch (e) {
     status.className = "status-line err";
     status.textContent = e.message || String(e);
+    if (e.debugHtml) offerDebugShare(e.debugHtml, `bus-${operator()}-response.html`);
   } finally { $("search-btn").disabled = false; }
+}
+
+// Developer diagnostics: let the user send the raw server page (share sheet →
+// clipboard → on-screen text as fallbacks). Contains no login data.
+let lastDebug = null;
+function offerDebugShare(html, filename) {
+  lastDebug = { html: String(html), filename };
+  const box = $("debug-box");
+  box.classList.remove("hidden");
+  $("debug-text").value = "";
+  $("debug-text").classList.add("hidden");
+}
+async function shareDebug() {
+  if (!lastDebug) return;
+  const { html, filename } = lastDebug;
+  try {
+    if (navigator.share) {
+      let file = null;
+      try { file = new File([html], filename, { type: "text/html" }); } catch (_) {}
+      if (file && navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: filename }); return; }
+      await navigator.share({ title: filename, text: html.slice(0, 60000) }); return;
+    }
+  } catch (e) { if (e && e.name === "AbortError") return; }
+  try { await navigator.clipboard.writeText(html); alert("응답 내용을 클립보드에 복사했습니다. 채팅에 붙여넣어 주세요."); return; } catch (_) {}
+  const ta = $("debug-text"); ta.value = html; ta.classList.remove("hidden"); ta.select();
 }
 
 function renderRows(rows) {
@@ -314,6 +341,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("auto-btn").addEventListener("click", () => startMacro(null));
   $("target-btn").addEventListener("click", startTargetMacro);
   $("window-btn").addEventListener("click", startWindowMacro);
+  $("debug-share").addEventListener("click", shareDebug);
   $("stop-btn").addEventListener("click", stopMacro);
   document.querySelectorAll("input,select").forEach((el) => el.addEventListener("change", saveForm));
 });

@@ -213,6 +213,41 @@ test("Tmoney: unknown terminal name triggers a runtime directory scan, then sear
   const rows = await c.searchTrain("동서울", "부산", "20260509", "000000", { includeNoSeats: true });
   assert.ok(rows.length >= 1);
   assert.ok(c.lastResolveDiag.length >= 4);
-  await assert.rejects(() => c.searchTrain("동서울", "없는터미널", "20260509"), /찾을 수 없습니다.*부산\(3001101\)/);
+  await assert.rejects(() => c.searchTrain("동서울", "없는터미널", "20260509"), /찾을 수 없습니다/);
+  assert.equal(findTerminal(c.terminals, "부산").code, "3001101"); // learned from the page scan
   assert.equal(urls.filter((u) => u.includes("trmlInfEnty")).length, 2); // session GET + one directory scan (not repeated)
+});
+
+import { scanEndpointHints, pageExcerpt, TMONEY_TERMINALS } from "../src/bus/terminals.js";
+
+test("terminal helpers: loose name match, endpoint hints, page excerpt", () => {
+  assert.equal(findTerminal(TMONEY_TERMINALS, "광주 유스퀘어").code, "6193701");
+  assert.equal(findTerminal(TMONEY_TERMINALS, "인천공항2").code, "2238202");
+  const page = `<script src="/js/otck/trml.js?v=3"></script><script src="https://cdn.example.com/x.js"></script>
+    $.post('/otck/readTrmlSrchList.do', {trml_Nm: q}); url: "/otck/readAlcnList.do"`;
+  const h = scanEndpointHints(page);
+  assert.deepEqual(h.urls, ["/otck/readTrmlSrchList.do"]);
+  assert.deepEqual(h.scripts, ["/js/otck/trml.js", "https://cdn.example.com/x.js"]);
+  const ex = pageExcerpt("<html><title>x</title><script>var a=1;</script><body><div>안내</div><p>조회된 운행 정보가 없습니다. 다시 확인해 주세요.</p></body></html>");
+  assert.match(ex, /운행 정보가 없습니다/);
+});
+
+test("Tmoney: discovered endpoints from page/scripts are queried for terminals", async () => {
+  const urls = [];
+  const http = { async request(req) {
+    urls.push(req.method + " " + req.url);
+    if (req.url.includes("trmlInfEnty")) return { status: 200, data: '<script src="/js/trml.js"></script>' };
+    if (req.url.endsWith("/js/trml.js")) return { status: 200, data: "fn(){ $.post('/otck/readTrmlSrchList.do', p) }" };
+    if (req.url.includes("readTrmlSrchList")) {
+      assert.equal(req.data.trml_Nm, "목포");
+      return { status: 200, data: { list: [{ trmlCd: "6112101", trmlNm: "목포" }] } };
+    }
+    return { status: 404, data: "<html>nf</html>" };
+  } };
+  const c = new T.Tmoney(http);
+  const list = await c.resolveTerminals("목포");
+  assert.equal(findTerminal(list, "목포").code, "6112101");
+  assert.ok(urls.includes("GET https://intercitybus.tmoney.co.kr/js/trml.js"));
+  assert.ok(urls.includes("POST https://intercitybus.tmoney.co.kr/otck/readTrmlSrchList.do"));
+  assert.ok(c.lastResolveDiag.some((d) => d.includes("발견한 엔드포인트")));
 });

@@ -9,7 +9,7 @@
 // Same interface as the KOBUS client / KTX clients for the shared macro.
 
 import { parseForm, fieldsToObject, attrs, stripTags, quotedArgs } from "./http-html.js";
-import { TMONEY_TERMINALS, findTerminal, scanTerminalPairs, mergeTerminals } from "./terminals.js";
+import { TMONEY_TERMINALS, findTerminal, scanTerminalPairs, mergeTerminals, scanEndpointHints, pageExcerpt } from "./terminals.js";
 import { busError, pageDiag, parseSoldOutTimes } from "./kobus.js";
 
 const BASE = "https://intercitybus.tmoney.co.kr";
@@ -123,34 +123,59 @@ export class Tmoney {
   }
 
   // Best-effort terminal directory. The site is server-rendered and we could
-  // not inspect it offline, so we fetch the pages a browser loads for the
-  // terminal picker plus a few likely ajax endpoints and scan every response
-  // for 7-digit code ↔ Korean name pairs. Unknown endpoints simply fail quietly.
+  // not inspect it offline, so we (1) fetch the pages a browser loads for the
+  // terminal picker, (2) discover any "...Trml....do" endpoints those pages and
+  // their scripts mention, (3) call the discovered + a few likely endpoints
+  // with the query under several parameter names, and scan every response for
+  // 7-digit code ↔ Korean name pairs. Unknown endpoints simply fail quietly.
   async resolveTerminals(query = "") {
     await this._ensureSession();
-    const attempts = [
-      { method: "GET", url: ENTRY },
-      { method: "GET", url: `${BASE}/main.do` },
-      { method: "POST", url: `${BASE}/otck/readTrmlList.do`, data: { trml_Nm: query, trmlNm: query } },
-      { method: "POST", url: `${BASE}/otck/readTrmlInf.do`, data: { trml_Nm: query, trmlNm: query } },
-      { method: "POST", url: `${BASE}/otck/trmlList.do`, data: { trml_Nm: query, trmlNm: query } },
-      { method: "POST", url: `${BASE}/otck/readDeprTrmlList.do`, data: { trml_Nm: query, trmlNm: query } },
-    ];
-    let found = [];
     this.lastResolveDiag = [];
-    for (const a of attempts) {
+    let found = [];
+    const seenUrl = new Set();
+    const hints = { urls: [], scripts: [] };
+    const absolute = (u) => (u.startsWith("http") ? u : BASE + (u.startsWith("/") ? u : "/" + u));
+    const call = async (a) => {
+      const url = absolute(a.url);
+      if (seenUrl.has(a.method + " " + url)) return null;
+      seenUrl.add(a.method + " " + url);
       try {
         const res = await this.http.request({
-          method: a.method, url: a.url, data: a.data,
+          method: a.method, url, data: a.data,
           headers: this._headers(ENTRY, a.method === "POST" ? { "Content-Type": "application/x-www-form-urlencoded" } : {}),
         });
         const body = typeof res.data === "string" ? res.data : JSON.stringify(res.data);
         const pairs = scanTerminalPairs(body, 7);
-        this.lastResolveDiag.push(`${a.url.replace(BASE, "")}: ${res.status} ${String(body).length}자 → ${pairs.length}곳`);
+        this.lastResolveDiag.push(`${url.replace(BASE, "")}: ${res.status} ${String(body).length}자 → ${pairs.length}곳`);
         found = found.concat(pairs);
+        return body;
       } catch (e) {
-        this.lastResolveDiag.push(`${a.url.replace(BASE, "")}: 실패(${e.message || e})`);
+        this.lastResolveDiag.push(`${url.replace(BASE, "")}: 실패(${e.message || e})`);
+        return null;
       }
+    };
+    // (1) pages
+    for (const url of [ENTRY, `${BASE}/main.do`]) {
+      const body = await call({ method: "GET", url });
+      if (!body) continue;
+      const h = scanEndpointHints(body);
+      hints.urls.push(...h.urls); hints.scripts.push(...h.scripts);
+    }
+    // (2) scripts referenced by those pages (same host only, at most 6)
+    for (const src of [...new Set(hints.scripts)].filter((u) => !/^https?:/.test(u) || u.startsWith(BASE)).slice(0, 6)) {
+      const body = await call({ method: "GET", url: src });
+      if (body) hints.urls.push(...scanEndpointHints(body).urls);
+    }
+    // (3) discovered + guessed endpoints, with the query under common names
+    const q = String(query || "").trim();
+    const params = { trml_Nm: q, trmlNm: q, srch_Trml_Nm: q, srchTrmlNm: q, searchWord: q, keyword: q, trml_Nm_Word: q, dep_Trml_Nm: q };
+    const skip = /trmlInfEnty|readAlcnList|readSatsFee|readPcpySats/;
+    const candidates = [...new Set(hints.urls)].filter((u) => !skip.test(u)).slice(0, 8)
+      .concat(["/otck/readTrmlList.do", "/otck/readTrmlInf.do", "/otck/trmlList.do", "/otck/readDeprTrmlList.do", "/otck/readTrmlNmList.do"]);
+    if (hints.urls.length) this.lastResolveDiag.push(`발견한 엔드포인트: ${[...new Set(hints.urls)].join(", ")}`);
+    for (const u of candidates) {
+      const body = await call({ method: "POST", url: u, data: params });
+      if (body == null) await call({ method: "GET", url: u + "?" + new URLSearchParams(params).toString() });
     }
     if (found.length) this.terminals = mergeTerminals(this.terminals, found);
     return this.terminals;
@@ -176,7 +201,9 @@ export class Tmoney {
     const html = typeof res.data === "string" ? res.data : JSON.stringify(res.data);
     const rows = parseSchedules(html);
     if (rows.length === 0) {
-      throw busError(`시간표를 찾지 못했습니다 [${pageDiag(html)}]. 코드/날짜를 확인하세요(매진·미운행 가능).`, "noresults");
+      const err = busError(`시간표를 찾지 못했습니다 [${pageDiag(html)}]. 페이지 내용: "${pageExcerpt(html)}" — 코드/날짜를 확인하세요(매진·미운행 가능).`, "noresults");
+      err.debugHtml = html;
+      throw err;
     }
     let trains = rows.map((r) => this._toTrain(r, d, a, date, time || "000000"));
     const seen = new Set(trains.map((t) => t.dep_time));

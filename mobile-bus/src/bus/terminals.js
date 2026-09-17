@@ -17,12 +17,49 @@ export const KOBUS_TERMINALS = [
 export const TMONEY_TERMINALS = [
   { name: "동서울", code: "0511601" },
   { name: "속초", code: "2482701" },
+  // Read from the site's own terminal list on a device (2026-09-17).
+  { name: "서울남부", code: "0671801" },
+  { name: "성남", code: "1349701" },
+  { name: "수원", code: "1658501" },
+  { name: "인천", code: "2224201" },
+  { name: "인천공항1터미널", code: "2238201" },
+  { name: "인천공항2터미널", code: "2238202" },
+  { name: "원주", code: "2638201" },
+  { name: "대전복합", code: "3455101" },
+  { name: "대구서부", code: "4248201" },
+  { name: "광주(유·스퀘어)", code: "6193701" },
 ];
 
+// Loose name match: ignores spaces/brackets/middle dots so "광주 유스퀘어",
+// "광주(유스퀘어)" and "광주(유·스퀘어)" all resolve to the same terminal.
+const norm = (s) => String(s || "").replace(/[\s()（）·ㆍ\-]/g, "");
 export function findTerminal(list, nameOrCode) {
   const q = String(nameOrCode || "").trim();
   if (!q) return null;
-  return list.find((t) => t.code === q) || list.find((t) => t.name === q) || list.find((t) => t.name.includes(q)) || null;
+  const nq = norm(q);
+  return list.find((t) => t.code === q) || list.find((t) => t.name === q)
+    || list.find((t) => norm(t.name) === nq) || list.find((t) => t.name.includes(q))
+    || list.find((t) => norm(t.name).includes(nq)) || null;
+}
+
+// Endpoint hints for a terminal-search call: any "/...Trml....do|ajax|json"
+// path mentioned in a page or script, plus <script src> files to look into.
+export function scanEndpointHints(text) {
+  const s = String(text || "");
+  const urls = new Set();
+  for (const m of s.matchAll(/["'`]((?:https?:\/\/[^"'`\s]+)?\/[\w./-]*[Tt]rml[\w./-]*\.(?:do|ajax|json))(?:\?[^"'`\s]*)?["'`]/g)) urls.add(m[1]);
+  const scripts = new Set();
+  for (const m of s.matchAll(/<script[^>]+src=["']([^"']+\.js)(?:\?[^"']*)?["']/gi)) scripts.add(m[1]);
+  return { urls: [...urls], scripts: [...scripts] };
+}
+
+// Short readable excerpt of a server page for on-screen diagnostics.
+export function pageExcerpt(html, max = 220) {
+  const text = String(html || "")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+  const m = text.match(/.{0,80}(없습니다|오류|확인해|운행|매진|잠시|점검|접속|이용).{0,120}/);
+  return (m ? m[0] : text.slice(0, max)).slice(0, max);
 }
 
 // Tolerant "code ↔ Korean name" pair scanner for server pages / JSON we cannot

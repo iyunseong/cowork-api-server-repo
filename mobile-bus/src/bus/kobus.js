@@ -11,7 +11,7 @@
 // The site is server-rendered HTML, so we scrape with the helper's regexes.
 
 import { parseForm, setField, fieldsToObject, attrs, stripTags, quotedArgs } from "./http-html.js";
-import { KOBUS_TERMINALS, findTerminal } from "./terminals.js";
+import { KOBUS_TERMINALS, findTerminal, pageExcerpt } from "./terminals.js";
 
 const BASE = "https://www.kobus.co.kr";
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/125 Safari/537.36";
@@ -192,7 +192,11 @@ export class Kobus {
     const html = typeof res.data === "string" ? res.data : JSON.stringify(res.data);
     const searchForm = parseForm(html, "alcnSrchFrm");
     const rows = parseSchedules(html);
-    if (rows.length === 0) throw busError(`시간표를 찾지 못했습니다 [${pageDiag(html)}]. 매진·미운행이거나 사이트가 다른 페이지를 돌려줬습니다.`, "noresults");
+    if (rows.length === 0) {
+      const err = busError(`시간표를 찾지 못했습니다 [${pageDiag(html)}]. 페이지 내용: "${pageExcerpt(html)}" — 매진·미운행이거나 사이트가 다른 페이지를 돌려줬습니다.`, "noresults");
+      err.debugHtml = html;
+      throw err;
+    }
 
     let trains = rows.map((r) => this._toTrain(r, d, a, date, searchForm));
     // Add sold-out departures that have no booking button so they can be targeted.
