@@ -10,7 +10,7 @@
 
 import { parseForm, fieldsToObject, attrs, stripTags, quotedArgs } from "./http-html.js";
 import { TMONEY_TERMINALS, findTerminal } from "./terminals.js";
-import { busError } from "./kobus.js";
+import { busError, pageDiag } from "./kobus.js";
 
 const BASE = "https://intercitybus.tmoney.co.kr";
 const ENTRY = `${BASE}/otck/trmlInfEnty.do`;
@@ -110,7 +110,8 @@ export class Tmoney {
     const t = findTerminal(this.terminals, v);
     if (t) return t;
     if (/^\d{7}$/.test(String(v).trim())) return { name: String(v).trim(), code: String(v).trim() };
-    throw busError(`시외버스 터미널을 찾을 수 없습니다: ${v} (7자리 코드를 직접 입력하세요)`, "other");
+    const known = this.terminals.map((x) => `${x.name}(${x.code})`).join(", ");
+    throw busError(`시외버스 터미널 '${String(v).trim()}'을(를) 찾을 수 없습니다. 아는 터미널: ${known} — 티머니 시외버스 사이트의 7자리 터미널 코드를 직접 입력하세요.`, "other");
   }
 
   makePassengers({ adults = 1 } = {}) {
@@ -133,8 +134,7 @@ export class Tmoney {
     const html = typeof res.data === "string" ? res.data : JSON.stringify(res.data);
     const rows = parseSchedules(html);
     if (rows.length === 0) {
-      const generic = html.includes("errorCont");
-      throw busError(generic ? "티머니가 오류 페이지를 반환했습니다(필수 필드/코드 확인)." : "조회된 시외버스 편이 없습니다.", "noresults");
+      throw busError(`시간표를 찾지 못했습니다 [${pageDiag(html)}]. 코드/날짜를 확인하세요(매진·미운행 가능).`, "noresults");
     }
     let trains = rows.map((r) => this._toTrain(r, d, a, date, time || "000000"));
     if (!opts.includeNoSeats) trains = trains.filter((t) => t.has_seat());

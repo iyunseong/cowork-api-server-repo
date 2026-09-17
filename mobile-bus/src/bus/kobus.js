@@ -27,6 +27,20 @@ function b64url(s) {
   return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
+// Short human-readable description of an unexpected page so the on-screen
+// error tells us WHAT came back (redirect / error page / captcha / login).
+export function pageDiag(html) {
+  const h = String(html || "");
+  const title = (h.match(/<title>([\s\S]*?)<\/title>/i) || [, ""])[1].replace(/\s+/g, " ").trim().slice(0, 40);
+  const flags = [];
+  if (/mblIdx|mobile\/|\/mbl/i.test(h)) flags.push("모바일메인 리다이렉트");
+  if (/errorCont|오류가 발생|시스템 오류/.test(h)) flags.push("오류페이지");
+  if (/grecaptcha|recaptcha|captcha/i.test(h)) flags.push("캡차");
+  if (/로그인|login/i.test(h) && !/fnSatsChc|readSasFeeInf/.test(h)) flags.push("로그인요구?");
+  if (/접근이 제한|차단|Access Denied|403/i.test(h)) flags.push("접근차단");
+  return `응답 ${h.length}자` + (title ? ` · 제목 '${title}'` : "") + (flags.length ? ` · ${flags.join(", ")}` : "");
+}
+
 export function busError(msg, kind = "other") {
   const e = new Error(msg);
   e.kind = kind;
@@ -130,11 +144,20 @@ export class Kobus {
     this.sessionReady = true;
   }
 
-  _code(v) {
-    const t = findTerminal(this.terminals, v);
+  async _code(v) {
+    const q = String(v || "").trim();
+    if (/^\d{3}$/.test(q)) return findTerminal(this.terminals, q) || { name: q, code: q };
+    let t = findTerminal(this.terminals, q);
     if (t) return t;
-    if (/^\d{3}$/.test(String(v).trim())) return { name: String(v).trim(), code: String(v).trim() };
-    throw busError(`고속버스 터미널을 찾을 수 없습니다: ${v} (코드 3자리를 직접 입력하세요)`, "other");
+    // Unknown name: try to load the live route list once, then retry.
+    if (!this._resolvedOnce) {
+      this._resolvedOnce = true;
+      try { await this.resolveTerminals(); } catch (_) {}
+      t = findTerminal(this.terminals, q);
+      if (t) return t;
+    }
+    const known = this.terminals.map((x) => `${x.name}(${x.code})`).slice(0, 12).join(", ");
+    throw busError(`고속버스 터미널 '${q}'을(를) 찾을 수 없습니다. 아는 터미널: ${known}${this.terminals.length > 12 ? " …" : ""} — 코드 3자리를 직접 입력하세요.`, "other");
   }
 
   makePassengers({ adults = 1 } = {}) {
@@ -143,8 +166,8 @@ export class Kobus {
 
   // date: YYYYMMDD, time: HHMMSS (schedules departing at/after this time).
   async searchTrain(dep, arr, date, time = "000000", opts = {}) {
-    const d = this._code(dep);
-    const a = this._code(arr);
+    const d = await this._code(dep);
+    const a = await this._code(arr);
     await this._ensureSession();
     const res = await this.http.request({
       method: "POST",
@@ -158,7 +181,7 @@ export class Kobus {
     const html = typeof res.data === "string" ? res.data : JSON.stringify(res.data);
     const searchForm = parseForm(html, "alcnSrchFrm");
     const rows = parseSchedules(html);
-    if (rows.length === 0) throw busError("조회된 고속버스 편이 없습니다(매진·미운행이거나 페이지 구조 변경).", "noresults");
+    if (rows.length === 0) throw busError(`시간표를 찾지 못했습니다 [${pageDiag(html)}]. 매진·미운행이거나 사이트가 다른 페이지를 돌려줬습니다.`, "noresults");
 
     let trains = rows.map((r) => this._toTrain(r, d, a, date, searchForm));
     if (time) trains = trains.filter((t) => t.dep_time >= time);
