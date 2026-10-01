@@ -144,7 +144,10 @@ async function makeClient() {
   if (!id || !pw) throw new Error("아이디와 비밀번호를 입력하세요.");
   const client = createClient(operator(), http);
   const ok = await client.login(id, pw); // SRT throws on failure; Korail returns false
-  if (ok === false) throw new Error("로그인 실패 — 아이디/비밀번호를 확인하세요.");
+  if (ok === false) {
+    const why = client.lastLoginMessage ? ` 코레일 응답: "${client.lastLoginMessage}"` : "";
+    throw new Error(`로그인 실패 — 아이디/비밀번호를 확인하세요.${why} (휴대폰 번호는 010-1234-5678 형식으로, 또는 회원번호 10자리로 입력해 보세요)`);
+  }
   return client;
 }
 

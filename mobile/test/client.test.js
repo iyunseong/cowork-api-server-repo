@@ -138,3 +138,17 @@ test("cancel() sends the reservation identifiers and succeeds", async () => {
   const ok = await k.cancel({ reservation_id: "PNR777", journey_no: "001", journey_cnt: "01", rsv_chg_no: "00000" });
   assert.equal(ok, true);
 });
+
+test("login: digits-only phone id is sent hyphenated as type 4; failure keeps server message", async () => {
+  let sent = null;
+  const http = mockHttp([
+    ["common.code.do", { strResult: "SUCC", "app.login.cphd": { idx: "77", key: "0123456789abcdef" } }],
+    ["login.Login", (req) => { sent = req.data; return { strResult: "FAIL", h_msg_cd: "P058", h_msg_txt: "비밀번호가 일치하지 않습니다." }; }],
+  ]);
+  const k = new Korail(http);
+  const ok = await k.login("01012345678", "pw!");
+  assert.equal(ok, false);
+  assert.equal(sent.txtInputFlg, "4");
+  assert.equal(sent.txtMemberNo, "010-1234-5678");
+  assert.equal(k.lastLoginMessage, "비밀번호가 일치하지 않습니다.");
+});

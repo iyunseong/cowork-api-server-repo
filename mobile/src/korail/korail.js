@@ -214,10 +214,17 @@ export class Korail {
   }
 
   async login(korailId, korailPw) {
+    korailId = String(korailId || "").trim();
     let inputFlag;
     if (EMAIL_REGEX.test(korailId)) inputFlag = "5";
-    else if (PHONE_REGEX.test(korailId) || PHONE_DIGITS_REGEX.test(korailId)) inputFlag = "4";
-    else inputFlag = "2";
+    else if (PHONE_REGEX.test(korailId)) inputFlag = "4";
+    else if (PHONE_DIGITS_REGEX.test(korailId)) {
+      // Korail expects phone logins as 010-1234-5678 (korail2 only accepts the
+      // hyphenated form); re-format digits-only input so the server recognises it.
+      inputFlag = "4";
+      korailId = korailId.replace(/^(\d{3})(\d{3,4})(\d{4})$/, "$1-$2-$3");
+    } else inputFlag = "2";
+    this.lastLoginMessage = null;
 
     const encPw = await this._encPassword(korailPw);
     const { headers, sid } = await this._authHeadersAndSid(URLS.LOGIN);
@@ -241,6 +248,9 @@ export class Korail {
       return true;
     }
     this.logined = false;
+    // Surface the server's own reason (wrong password, locked account, app-only
+    // login, ...) so the UI can show it instead of a generic failure.
+    this.lastLoginMessage = (data && (data.h_msg_txt || data.strMsg)) || null;
     return false;
   }
 
