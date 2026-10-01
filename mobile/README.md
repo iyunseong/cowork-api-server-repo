@@ -26,6 +26,14 @@ PC·서버 없이 **폰에 설치하는 앱 하나로** KTX(코레일) 또는 **
 > 백그라운드 지속·알림이 잘 되려면 최초 실행 시 알림 권한을 허용하고, 제조사에 따라
 > **배터리 최적화 예외**를 켜 주세요(설정 → 앱 → KTX 자동예매 → 배터리 → 제한 없음).
 
+## 🔁 2026-10 코레일+ 프로토콜 대응 (v1.4.0)
+2026년 9월 코레일+ 통합 이후 코레일 서버가 봇 차단 토큰 규격(DynaPath SDK v1.0.3, 요청 간격 이력 포함)과
+앱 식별 필드(Version 250601003 · AppVersion 7.0.8 · Key)를 바꿔, korail2 기반 로그인이 이유 없이 실패하게
+됐습니다. v1.4.0부터 요청 흐름을 공식 앱(7.0.8)과 같게 맞췄습니다: 서비스 상태 조회 → 공통코드로 비밀번호
+키 수신 → 로그인(h_msg_cd 로 성공 판정) → 조회/예약은 폼 POST + NetFunnel 대기열 통과(실패 시 우회).
+토큰·비밀번호 인코딩·조회/예약 폼은 오픈소스 korail-mobile-api(Apache-2.0)와 테스트로 대조합니다.
+실패 시 서버 원본 응답이 화면에 표시됩니다.
+
 ## 🛠 구조
 
 ```
@@ -52,7 +60,7 @@ mobile/
 cd mobile
 npm install
 # 로직 검증(파이썬 원본과 크립토/토큰 대조 + 매크로 흐름):
-python3 -m pip install korail2-ncard pycryptodome
+python3 -m pip install korail2-ncard pycryptodome SRTrain korail-mobile-api
 npm test
 # APK 빌드(안드로이드 SDK 필요 — 보통은 CI에 맡깁니다):
 npm run apk   # www 빌드 -> cap sync -> gradlew assembleDebug

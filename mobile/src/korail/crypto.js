@@ -26,12 +26,26 @@ export async function generateSid(timestampMs, device = "AD", sidKey = "2485dd54
   return bytesToBase64(ct) + "\n";
 }
 
-// Login password encryption. Python __enc_password: fetch {idx, key} from
-// KORAIL_CODE, then base64(base64(AES-CBC(key=key, iv=key[:16]).encrypt(pad(pw)))).
+// Login password encryption, as the 코레일+ app does it (AESCrypto + Android
+// Base64): AES-CBC(key=key, iv=key[:16], PKCS#7) → standard base64 (NO_WRAP)
+// → URL_SAFE base64 of that ASCII text, wrapped at 76 columns with a trailing
+// newline (Android's default wrap mode). Server-issued {idx, key} come from
+// common.code.do ("app.login.cphd").
 export async function encryptPassword(password, key) {
   const keyBytes = encoder.encode(key);
   const ivBytes = encoder.encode(key.slice(0, 16));
   const ct = await aesCbcEncrypt(keyBytes, ivBytes, encoder.encode(password));
-  const inner = bytesToBase64(ct); // first base64 (ASCII string)
-  return btoa(inner); // second base64 over the ASCII bytes of the first
+  const inner = bytesToBase64(ct);
+  const outer = btoa(inner).replace(/\+/g, "-").replace(/\//g, "_");
+  const lines = [];
+  for (let i = 0; i < outer.length; i += 76) lines.push(outer.slice(i, i + 76));
+  return lines.join("\n") + "\n";
+}
+
+// korail2-era variant (double standard base64); kept for the parity test.
+export async function encryptPasswordLegacy(password, key) {
+  const keyBytes = encoder.encode(key);
+  const ivBytes = encoder.encode(key.slice(0, 16));
+  const ct = await aesCbcEncrypt(keyBytes, ivBytes, encoder.encode(password));
+  return btoa(bytesToBase64(ct));
 }

@@ -25,7 +25,27 @@ PASSWORD = "hunter2!pw"
 LOGIN_KEY = "0123456789abcdef"  # 16-char key as returned by KORAIL_CODE
 
 
+# Oracle for the 코레일+ 7.0.8 protocol: korail-mobile-api (Apache-2.0).
+from korail_mobile_api.dynapath import DynapathTokenSettings, generate_dynapath_token, KORAIL_DYNAPATH_AS_VALUE  # noqa: E402
+from korail_mobile_api.crypto import transform_login_password  # noqa: E402
+from korail_mobile_api.models import LoginCryptoInfo, TrainSearchQuery, TrainSummary  # noqa: E402
+from korail_mobile_api.config import KorailConfig  # noqa: E402
+from korail_mobile_api.payloads import build_train_search_form, build_common_code_form  # noqa: E402
+from korail_mobile_api.mutation_payloads import build_reservation_form  # noqa: E402
+
+RT_INTERVALS = [600000, 1500, 7000]
+
+
 def token():
+    # SDK v1.0.3 token with an interval history (what the 7.0.8 app sends).
+    settings = DynapathTokenSettings(
+        device_id=DEVICE_ID, as_value=KORAIL_DYNAPATH_AS_VALUE, app_start_ts=str(APP_START_TS),
+        os_version="13", device_model="SM-S928N",
+    )
+    return generate_dynapath_token(settings, timestamp_ms=TIMESTAMP_MS, random_text=NONCE, recent_intervals=tuple(RT_INTERVALS))
+
+
+def token_legacy():
     engine = DynaPathMasterEngine()
     engine.app_start_ts = APP_START_TS
     return engine.generate_token(DEVICE_ID, TIMESTAMP_MS, NONCE)
@@ -35,6 +55,11 @@ def sid():
     cipher = AES.new(SID_KEY, AES.MODE_CBC, iv=SID_KEY)
     plaintext = f"{DEVICE}{TIMESTAMP_MS}".encode("utf-8")
     return base64.b64encode(cipher.encrypt(pad(plaintext, 16))).decode("utf-8") + "\n"
+
+
+def enc_password_app():
+    # App-style: inner standard base64, outer URL-safe base64 wrapped at 76 cols + "\n".
+    return transform_login_password(PASSWORD, LoginCryptoInfo(idx="77", key=LOGIN_KEY, pwd_aes_cphd=""))
 
 
 def enc_password():
@@ -59,6 +84,23 @@ def train_id():
     return build_train_id(Train(SAMPLE_TRAIN))
 
 
+SAMPLE_TRAIN_FULL = dict(SAMPLE_TRAIN, h_dpt_stn_cons_ordr="000001", h_dpt_stn_run_ordr="000001",
+                         h_arv_stn_cons_ordr="000013", h_arv_stn_run_ordr="000010")
+
+
+def forms():
+    cfg = KorailConfig()
+    q = TrainSearchQuery("서울", "부산", "20260801", "090000", passengers=2, child_passengers=1,
+                         senior_passengers=1, train_group_code="109", include_srt=True)
+    return {
+        "search": build_train_search_form(cfg, q, departure_name="서울", arrival_name="부산", member_card_no="1234567890"),
+        "searchNoMember": build_train_search_form(cfg, TrainSearchQuery("서울", "부산", "20260801", "090000", train_group_code="100"),
+                                                  departure_name="서울", arrival_name="부산"),
+        "reserve": build_reservation_form(cfg, TrainSummary.from_raw(SAMPLE_TRAIN_FULL)),
+        "commonCode": build_common_code_form(cfg, ["app.login.cphd", "app.var.data"]),
+    }
+
+
 if __name__ == "__main__":
     print(json.dumps({
         "sampleTrain": SAMPLE_TRAIN,
@@ -73,7 +115,12 @@ if __name__ == "__main__":
             "password": PASSWORD,
             "loginKey": LOGIN_KEY,
         },
+        "rtIntervals": RT_INTERVALS,
         "token": token(),
+        "tokenLegacy": token_legacy(),
         "sid": sid(),
         "encPassword": enc_password(),
+        "encPasswordApp": enc_password_app(),
+        "sampleTrainFull": SAMPLE_TRAIN_FULL,
+        "forms": forms(),
     }))

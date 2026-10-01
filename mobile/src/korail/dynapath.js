@@ -16,7 +16,7 @@ const APP_ID = "com.korail.talk";
 const AS_VALUE = "%5B38ff229cb34c7dda8e28220a2d750cce%5D";
 const DEVICE_MODEL = "SM-S928N";
 const OS_TYPE = "Android";
-const SDK_VERSION = "v1";
+const SDK_VERSION = "v1.0.3";
 
 function string2xa1s(data) {
   const result = [];
@@ -120,17 +120,38 @@ function encodeNormalBE(data, table) {
   return output.join("");
 }
 
+// SDK v1.0.3 (코레일+ 7.0.x). Korail stopped accepting the older "v1" tokens
+// after the 2026-09 코레일+ migration: the SDK version is part of the key
+// material and the token now carries the recent request-interval history
+// (`rt`, up to 5 entries, newest last). Field layout per the 7.0.8 app
+// (cross-checked against pykorail 0.2.0 / korail-mobile-api 2.3.0).
+const RT_HISTORY = 5;
+
 export class DynaPath {
-  // appStartTs mirrors the Python engine's app_start_ts (app launch time in ms).
-  constructor(appStartTs) {
+  // appStartTs mirrors the SDK init time (`it`); one instance = one app run.
+  constructor(appStartTs, { osVersion = "13", deviceModel = DEVICE_MODEL } = {}) {
     this.appStartTs = String(appStartTs);
+    this.lastTs = Number(appStartTs);
+    this.intervals = [];
+    this.osVersion = osVersion;
+    this.deviceModel = deviceModel;
   }
 
+  // Like the SDK: record the interval since the previous token, then sign.
   generateToken(deviceId, timestampMs, nonce) {
+    this.intervals.push(timestampMs - this.lastTs);
+    if (this.intervals.length > RT_HISTORY) this.intervals.shift();
+    this.lastTs = timestampMs;
+    return this.tokenFor(deviceId, timestampMs, nonce, this.intervals);
+  }
+
+  // Pure variant (no history mutation); used by the parity tests.
+  tokenFor(deviceId, timestampMs, nonce, intervals = []) {
+    const rt = intervals.map((d) => `&rt=${d}`).join("");
     const plaintext =
       `ai=${APP_ID}&di=${deviceId}&as=${AS_VALUE}&su=false&dbg=false&emu=false&hk=false` +
-      `&it=${this.appStartTs}&ts=${timestampMs}&rt=0&os=13&dm=${DEVICE_MODEL}&st=${OS_TYPE}&sv=${SDK_VERSION}`;
-    const dynKey = `v1+${nonce}+${timestampMs}`;
+      `&it=${this.appStartTs}&ts=${timestampMs}${rt}&os=${this.osVersion}&dm=${this.deviceModel}&st=${OS_TYPE}&sv=${SDK_VERSION}`;
+    const dynKey = `${SDK_VERSION}+${nonce}+${timestampMs}`;
     const keyEncoded = encodeNormalBE(dynKey, TABLE);
     const table2 = makeEncodeTable(makeKey(dynKey), I9, TABLE);
     const bodyEncoded = encodeNormalBE(plaintext, table2);

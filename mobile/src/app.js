@@ -31,9 +31,9 @@ const http = {
   async request({ method, url, params, data, headers }) {
     const h = Object.assign({}, headers);
     let body = data;
-    if (data) {
+    if (data !== undefined && data !== null) {
       h["Content-Type"] = h["Content-Type"] || "application/x-www-form-urlencoded";
-      body = strMap(data);
+      body = typeof data === "string" ? data : strMap(data); // pre-encoded forms pass through
     }
     const res = await CapacitorHttp.request({ method, url, params: strMap(params), data: body, headers: h });
     let parsed = res.data;
