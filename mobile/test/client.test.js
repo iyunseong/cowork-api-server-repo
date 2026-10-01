@@ -61,7 +61,7 @@ test("login: service probe → common-code key → signed login form; success by
       assert.equal(req.data.idx, "77");
       assert.match(req.data.txtPwd, /\n$/); // app-style wrapped base64
       assert.ok(req.headers["x-dynapath-m-token"], "login must carry dynapath token");
-      assert.ok(req.data.Sid, "login must carry Sid");
+      assert.equal(req.data.Sid, undefined); // the 7.0.8 app sends no Sid field
       assert.equal(req.headers["User-Agent"], "korailtalk");
       return { strResult: "SUCC", h_msg_cd: "IRZ000001", strMbCrdNo: "1234567890", strCustNm: "홍길동", strCustNo: "C1" };
     }],
@@ -111,9 +111,7 @@ test("search form matches korail-mobile-api build_train_search_form; rows parsed
   ]);
   const k = client(http);
   const trains = await k.searchTrain("서울", "부산", "20260801", "090000", { trainType: "100" });
-  const { Sid, ...sent } = form;
-  assert.ok(Sid);
-  assert.deepEqual(sent, ref.forms.searchNoMember);
+  assert.deepEqual(form, ref.forms.searchNoMember);
   assert.equal(trains.length, 1); // sold-out one filtered out by default
   assert.equal(trains[0].has_general_seat(), true);
 
@@ -121,8 +119,7 @@ test("search form matches korail-mobile-api build_train_search_form; rows parsed
   await k.searchTrain("서울", "부산", "20260801", "090000", {
     trainType: "109", passengers: buildPassengers({ adults: 2, children: 1, seniors: 1 }), includeNoSeats: true,
   });
-  const { Sid: s2, ...sent2 } = form;
-  assert.deepEqual(sent2, ref.forms.search); // 전체 → SRT included (ebizCrossCheck/srtCheckYn=Y), mbCrdNo carried
+  assert.deepEqual(form, ref.forms.search); // 전체 → SRT included (ebizCrossCheck/srtCheckYn=Y), mbCrdNo carried
 });
 
 test("search: DynaPath block reply becomes a typed error instead of a silent empty list", async () => {
@@ -155,9 +152,7 @@ test("reserve form matches korail-mobile-api build_reservation_form; returns the
   const k = client(http);
   const train = parseTrain(ref.sampleTrainFull);
   const rsv = await k.reserve(train, { passengers: buildPassengers({ adults: 1 }) });
-  const { Sid, ...sent } = form;
-  assert.ok(Sid);
-  assert.deepEqual(sent, noEmpty(ref.forms.reserve));
+  assert.deepEqual(form, noEmpty(ref.forms.reserve));
   assert.equal(rsv.reservation_id, "PNR123");
   assert.equal(rsv.price, 59800);
   assert.equal(rsv.buy_limit_time, "093000");
@@ -236,4 +231,24 @@ test("queue gate: 5101 → wait → 5002 → request → 5004; failures bypass",
   const k2 = new Korail(down);
   assert.equal((await k2.searchTrain("서울", "부산", "20260801", "090000")).length, 1);
   assert.match(k2.queue.lastDiag, /bypass/);
+});
+
+test("device identity: random per-install id, shared DynaPath history across clients", async () => {
+  const { randomDeviceId } = await import("../src/korail/korail.js");
+  const a = randomDeviceId(), b = randomDeviceId();
+  assert.match(a, /^[0-9a-f]{16}$/);
+  assert.notEqual(a, b);
+  const identity = { deviceId: a, appStartTs: 1700000000000, osVersion: "14", deviceModel: "SM-S928N" };
+  const http = mockHttp([["seatMovie.ScheduleView", { strResult: "SUCC", trn_infos: { trn_info: [ref.sampleTrain] } }]]);
+  const k1 = new Korail(http, { identity, queue: false });
+  const k2 = new Korail(http, { identity, queue: false });
+  assert.equal(k1.dyna, k2.dyna); // one app run → one token history
+  assert.equal(k1.deviceId, a);
+  assert.equal(k1.dyna.osVersion, "14");
+  await k1.searchTrain("서울", "부산", "20260801", "090000");
+  await k2.searchTrain("서울", "부산", "20260801", "090000");
+  assert.equal(k1.dyna.intervals.length, 2);
+  const fresh = new Korail(http, { queue: false });
+  assert.match(fresh.deviceId, /^[0-9a-f]{16}$/);
+  assert.notEqual(fresh.deviceId, "558a4f02041657ea");
 });

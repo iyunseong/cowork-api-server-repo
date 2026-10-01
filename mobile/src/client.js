@@ -25,8 +25,8 @@ export const OPERATORS = {
   srt: { label: "SRT (수서고속철)", stations: SRT_STATIONS },
 };
 
-export function createClient(operator, http) {
-  return operator === "srt" ? new SRT(http) : new Korail(http);
+export function createClient(operator, http, identity = null) {
+  return operator === "srt" ? new SRT(http) : new Korail(http, { identity });
 }
 
 export function stationsFor(operator) {

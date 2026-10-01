@@ -6,6 +6,9 @@
 // the thin, device-only integration layer.
 
 import { createClient, stationsFor, OPERATORS } from "./client.js";
+import { randomDeviceId } from "./korail/korail.js";
+
+const APP_START_TS = Date.now(); // DynaPath `it`: when this app run started
 import { runMacro } from "./macro.js";
 
 const Cap = window.Capacitor || {};
@@ -16,6 +19,7 @@ const LocalNotifications = P.LocalNotifications;
 const ForegroundService = P.ForegroundService; // local plugin; optional
 
 const CREDS_KEY = "ktx.creds";
+const DEVICE_KEY = "ktx.device"; // per-install device identity for the anti-bot token
 const FORM_KEY = "ktx.form";
 
 const $ = (id) => document.getElementById(id);
@@ -137,12 +141,37 @@ async function restore() {
   if (creds) { $("id").value = creds.id || ""; $("password").value = creds.password || ""; }
 }
 
+// ---- device identity (one "phone running one app" per install/run) --------
+// Korail's DynaPath token carries a device id plus the app-start time and the
+// request-interval history; it is shared across all clients in this run and
+// the id is generated once per install (a shared/fixed id gets flagged as a
+// macro). OS version / model are read from the real WebView UA when possible.
+let identity = null;
+async function getIdentity() {
+  if (identity) return identity;
+  let saved = await prefGet(DEVICE_KEY);
+  if (!saved || !/^[0-9a-f]{16}$/.test(saved.deviceId || "")) {
+    saved = { deviceId: randomDeviceId() };
+    await prefSet(DEVICE_KEY, saved);
+  }
+  const ua = navigator.userAgent || "";
+  const os = (ua.match(/Android (\d+)/) || [])[1];
+  const model = (ua.match(/Android [\d.]+; ([^;)]+?)(?: Build\/[^;)]*)?[;)]/) || [])[1];
+  identity = {
+    deviceId: saved.deviceId,
+    appStartTs: APP_START_TS,
+    osVersion: os || "13",
+    deviceModel: (model && model.trim()) || "SM-S928N",
+  };
+  return identity;
+}
+
 // ---- login helper --------------------------------------------------------
 async function makeClient() {
   const id = $("id").value.trim();
   const pw = $("password").value;
   if (!id || !pw) throw new Error("아이디와 비밀번호를 입력하세요.");
-  const client = createClient(operator(), http);
+  const client = createClient(operator(), http, await getIdentity());
   const ok = await client.login(id, pw); // SRT throws on failure; Korail returns false
   if (ok === false) {
     const why = client.lastLoginMessage ? ` 코레일 응답: "${client.lastLoginMessage}"` : "";

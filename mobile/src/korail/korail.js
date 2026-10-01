@@ -16,7 +16,7 @@
 // cookie store, so Korail's session cookies persist across calls).
 
 import { DynaPath } from "./dynapath.js";
-import { generateSid, encryptPassword } from "./crypto.js";
+import { encryptPassword } from "./crypto.js";
 import { resultCheck, NeedToLoginError, NoResultsError, SoldOutError, KorailError } from "./errors.js";
 import { KorailQueue } from "./netfunnel.js";
 
@@ -205,8 +205,15 @@ function passengerGetDict(p, index) {
   };
 }
 
+// 16 hex chars, like Android's android_id (what the SDK puts in `di`).
+export function randomDeviceId() {
+  const bytes = new Uint8Array(8);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 function randomNonce() {
-  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  const alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"; // SDK alphabet
   const bytes = new Uint8Array(4);
   crypto.getRandomValues(bytes);
   let out = "";
@@ -215,13 +222,21 @@ function randomNonce() {
 }
 
 export class Korail {
-  constructor(http, { appStartTs, queue = true } = {}) {
+  // identity: { deviceId, appStartTs, osVersion, deviceModel, dyna } — pass the
+  // SAME object for every client created during one app run so the DynaPath
+  // history (`it`, `rt`) and the device id look like one phone running one app.
+  // The device id must be unique per install: the fixed id that the korail2
+  // lineage shipped is shared by every macro user and is now rejected by Korail
+  // ("매크로 등 미허가 도구 사용 시 이용이 제한될 수 있습니다").
+  constructor(http, { identity = null, appStartTs, queue = true } = {}) {
     this.http = http;
     this.device = DEVICE;
     this.version = VERSION;
     this.appVersion = APP_VERSION;
-    this.deviceId = "558a4f02041657ea";
-    this.dyna = new DynaPath(appStartTs || Date.now());
+    const id = identity || {};
+    this.deviceId = id.deviceId || randomDeviceId();
+    if (!id.dyna) id.dyna = new DynaPath(id.appStartTs || appStartTs || Date.now(), { osVersion: id.osVersion, deviceModel: id.deviceModel });
+    this.dyna = id.dyna;
     this.queue = queue ? new KorailQueue(http) : null;
     this.key = API_KEY;
     this.idx = null;
@@ -238,24 +253,21 @@ export class Korail {
     return { Device: this.device, Version: this.version, AppVersion: this.appVersion, Key: this.key };
   }
 
+  // The 7.0.8 app sends only the DynaPath header on protected paths (no Sid
+  // form field); keep generateSid available for the legacy parity test only.
   async _authHeadersAndSid(url) {
     const headers = { "User-Agent": USER_AGENT };
-    let sid = null;
     if (DYNAPATH_PATHS.some((p) => url.includes(p))) {
-      const ts = Date.now();
-      const nonce = randomNonce();
-      headers["x-dynapath-m-token"] = this.dyna.generateToken(this.deviceId, ts, nonce);
-      sid = await generateSid(ts, this.device);
+      headers["x-dynapath-m-token"] = this.dyna.generateToken(this.deviceId, Date.now(), randomNonce());
     }
-    return { headers, sid };
+    return { headers, sid: null };
   }
 
   // Form POST, signed when the path needs DynaPath; optionally paced by the
   // NetFunnel queue gate. Returns the parsed reply (object, or raw text).
   async _post(url, form, { gate = null, encoded = false } = {}) {
-    const { headers, sid } = await this._authHeadersAndSid(url);
-    const body = sid ? Object.assign({}, form, { Sid: sid }) : form;
-    const data = encoded ? encodeForm(body) : body;
+    const { headers } = await this._authHeadersAndSid(url);
+    const data = encoded ? encodeForm(form) : form;
     const send = () => this.http.request({ method: "POST", url, data, headers });
     const res = gate && this.queue ? await this.queue.run(gate, send) : await send();
     return res;
