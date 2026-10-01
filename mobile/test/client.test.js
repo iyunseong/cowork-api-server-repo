@@ -150,5 +150,22 @@ test("login: digits-only phone id is sent hyphenated as type 4; failure keeps se
   assert.equal(ok, false);
   assert.equal(sent.txtInputFlg, "4");
   assert.equal(sent.txtMemberNo, "010-1234-5678");
-  assert.equal(k.lastLoginMessage, "비밀번호가 일치하지 않습니다.");
+  assert.match(k.lastLoginMessage, /^비밀번호가 일치하지 않습니다\. \[P058\]$/);
+});
+
+test("login: non-envelope reply (anti-bot block / HTML) is surfaced verbatim", async () => {
+  const http = mockHttp([
+    ["common.code.do", { strResult: "SUCC", "app.login.cphd": { idx: "77", key: "0123456789abcdef" } }],
+    ["login.Login", () => ({ code: -8201, message: "MACRO ERROR" })],
+  ]);
+  const k = new Korail(http);
+  assert.equal(await k.login("1234567890", "pw!"), false);
+  assert.equal(k.lastLoginMessage, "MACRO ERROR");
+  const html = mockHttp([
+    ["common.code.do", { strResult: "SUCC", "app.login.cphd": { idx: "77", key: "0123456789abcdef" } }],
+    ["login.Login", () => "<html><body><h1>접근이 차단되었습니다</h1></body></html>"],
+  ]);
+  const k2 = new Korail(html);
+  assert.equal(await k2.login("1234567890", "pw!"), false);
+  assert.match(k2.lastLoginMessage, /코레일 봉투가 아닌 응답 \(HTTP 200\): 접근이 차단되었습니다/);
 });

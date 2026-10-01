@@ -249,8 +249,19 @@ export class Korail {
     }
     this.logined = false;
     // Surface the server's own reason (wrong password, locked account, app-only
-    // login, ...) so the UI can show it instead of a generic failure.
-    this.lastLoginMessage = (data && (data.h_msg_txt || data.strMsg)) || null;
+    // login, ...) so the UI can show it instead of a generic failure. When the
+    // reply is not a Korail envelope at all (anti-bot block JSON, HTML page),
+    // show what came back so the cause can be identified from the screen.
+    let why = (data && typeof data === "object" && (data.h_msg_txt || data.strMsg || data.message)) || null;
+    if (!why) {
+      const raw = typeof data === "string" ? data : JSON.stringify(data);
+      const text = String(raw || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+      why = `코레일 봉투가 아닌 응답 (HTTP ${res.status}): ${text.slice(0, 240) || "(빈 응답)"}`;
+    } else if (data && data.h_msg_cd) {
+      why = `${why} [${data.h_msg_cd}]`;
+    }
+    this.lastLoginMessage = why;
+    this.lastLoginRaw = data;
     return false;
   }
 
