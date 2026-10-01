@@ -8,6 +8,8 @@ k-skill의 `express-bus-booking`(KOBUS) / `intercity-bus-booking`(티머니) 스
 HTTP 흐름을 JS로 포팅했고, 파서는 두 헬퍼의 파이썬 함수를 오라클로 대조 검증합니다(`test/`).
 
 ## 설치
+**고정 다운로드 링크(항상 최신 버전):** https://github.com/iyunseong/cowork-api-server-repo/releases/download/bus-latest/bus-auto-booking.apk
+
 GitHub Releases에서 `bus-auto-booking.apk`(태그 `bus-vX.Y.Z`)를 받아 설치합니다. KTX 앱과 같은
 고정 서명 키를 쓰므로 이후 버전은 덮어쓰기 업데이트가 됩니다.
 

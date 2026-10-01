@@ -124,3 +124,22 @@ jobs:
             **설치:** 아래 `ktx-auto-booking.apk`를 폰으로 받아 실행 → "출처를 알 수 없는 앱 설치" 허용 후 설치하세요(디버그 서명 경고는 정상).
 
             결제는 자동화하지 않습니다. 예약 성공 후 코레일 앱에서 결제하세요.
+      - name: Update the fixed "latest" download link (tag ktx-latest)
+        # A rolling release whose asset is overwritten on every release, so
+        # https://github.com/<owner>/<repo>/releases/download/ktx-latest/ktx-auto-booking.apk
+        # always downloads the newest KTX APK (works without a GitHub login while the repo is public).
+        if: >-
+          startsWith(github.ref, 'refs/tags/v') ||
+          (github.event_name == 'workflow_dispatch' && inputs.release_tag != '') ||
+          contains(github.event.head_commit.message, '[release]')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ktx-auto-booking.apk
+          tag_name: ktx-latest
+          name: KTX 자동 예매 — 최신 버전 (${{ steps.ver.outputs.tag }})
+          target_commitish: ${{ github.sha }}
+          make_latest: false
+          body: |
+            항상 최신 KTX 자동 예매 APK가 올라오는 고정 링크용 Release입니다. 현재 버전: ${{ steps.ver.outputs.tag }}
+
+            다운로드: https://github.com/${{ github.repository }}/releases/download/ktx-latest/ktx-auto-booking.apk

@@ -10,7 +10,9 @@ PC·서버 없이 **폰에 설치하는 앱 하나로** KTX(코레일) 또는 **
 **JS로 포팅해 폰 안에서 실행**되게 만든 것입니다. 포팅 정확도는 파이썬 원본과
 바이트 단위로 대조 검증합니다(`test/`).
 
-## 📲 설치 (비개발자용)
+## 📲 설치
+**고정 다운로드 링크(항상 최신 버전):** https://github.com/iyunseong/cowork-api-server-repo/releases/download/ktx-latest/ktx-auto-booking.apk
+ (비개발자용)
 
 1. GitHub 저장소의 **Actions** 또는 **Releases**에서 자동 빌드된
    `ktx-auto-booking.apk` 를 폰으로 다운로드합니다.
