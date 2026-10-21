@@ -35,7 +35,10 @@ export const URLS = {
 // App identity (코레일+ 7.0.8). Do not change working values casually: the
 // server gates on them (SUPDATE = "update the app").
 const DEVICE = "AD";
-const VERSION = "250601003";
+// Internal API version of the 코레일+ 7.0.8 build. Korail answers older values
+// with -8204 "최신 버전으로 업데이트해 주세요" (seen 2026-10). 250722001 is the
+// value in a 2026-10-03 capture of the official app (pykorail protocol evidence).
+const VERSION = "250722001";
 const APP_VERSION = "7.0.8";
 const API_KEY = "korail1234567890";
 const COMMON_CODES = [
@@ -46,7 +49,7 @@ const COMMON_CODES = [
 ];
 const LOGIN_OK_CODES = new Set(["IRZ000001", "S200"]);
 // DynaPath interceptor block codes (integer field in the reply body).
-const DYNAPATH_BLOCK_CODES = new Set([-1203, -1406, -2000, -8005, -8201, -8202, -8203]);
+const DYNAPATH_BLOCK_CODES = new Set([-1203, -1406, -2000, -8005, -8201, -8202, -8203, -8204]);
 
 // Paths that require the Dynapath token + Sid (from ktx_booking.py).
 const DYNAPATH_PATHS = [
@@ -265,10 +268,13 @@ export class Korail {
 
   // Form POST, signed when the path needs DynaPath; optionally paced by the
   // NetFunnel queue gate. Returns the parsed reply (object, or raw text).
-  async _post(url, form, { gate = null, encoded = false } = {}) {
+  async _post(url, form, { gate = null, encoded = false, query = false } = {}) {
     const { headers } = await this._authHeadersAndSid(url);
     const data = encoded ? encodeForm(form) : form;
-    const send = () => this.http.request({ method: "POST", url, data, headers });
+    // query: the app sends ScheduleView as POST with the form in the query string.
+    const send = () => query
+      ? this.http.request({ method: "POST", url, params: form, headers: Object.assign({ "Content-Type": "application/x-www-form-urlencoded" }, headers) })
+      : this.http.request({ method: "POST", url, data, headers });
     const res = gate && this.queue ? await this.queue.run(gate, send) : await send();
     return res;
   }
@@ -304,8 +310,10 @@ export class Korail {
     // as typed (digits); the server also accepts the hyphenated form.
     let inputFlag;
     if (EMAIL_REGEX.test(korailId)) inputFlag = "5";
-    else if (PHONE_REGEX.test(korailId) || PHONE_DIGITS_REGEX.test(korailId)) inputFlag = "4";
-    else inputFlag = "2";
+    else if (PHONE_REGEX.test(korailId) || PHONE_DIGITS_REGEX.test(korailId)) {
+      inputFlag = "4";
+      korailId = korailId.replace(/-/g, ""); // the 7.0.8 app sends phone numbers without hyphens
+    } else inputFlag = "2";
     this.lastLoginMessage = null;
     this.lastLoginRaw = null;
 
@@ -349,7 +357,12 @@ export class Korail {
     const pax = passengers || buildPassengers();
     const c = pax.counts;
     const all = trainType === TRAIN_TYPES.all;
-    const form = Object.assign(this._common(), {
+    // ScheduleView form as the 7.0.8 app sends it (live-verified 2026-10-12):
+    // Device + Version + empty Sid, no Key / AppVersion / qryDvCd.
+    const form = {
+      Device: this.device,
+      Version: this.version,
+      Sid: "",
       txtMenuId: "11",
       radJobId: "1",
       selGoTrain: trainType,
@@ -370,11 +383,10 @@ export class Korail {
       srtCheckYn: all ? "Y" : "N",
       rtYn: "N",
       adjStnScdlOfrFlg: "N",
-    });
+    };
     if (this.membershipNumber) form.mbCrdNo = this.membershipNumber;
-    form.qryDvCd = "1";
 
-    const res = await this._post(URLS.SEARCH, form, { gate: "inquiry" });
+    const res = await this._post(URLS.SEARCH, form, { gate: "inquiry", query: true });
     const data = this._envelope(res);
     resultCheck(data);
     let infos = data.trn_infos && data.trn_infos.trn_info;

@@ -46,17 +46,17 @@ test("login: service probe → common-code key → signed login form; success by
     ["MobileService.cache", { strResult: "SUCC" }],
     ["common.code.do", (req) => {
       assert.equal(typeof req.data, "string"); // repeated code= keys need a pre-encoded body
-      assert.match(req.data, /Device=AD&Version=250601003&AppVersion=7\.0\.8&Key=korail1234567890&code=app\.display\.image&/);
+      assert.match(req.data, /Device=AD&Version=250722001&AppVersion=7\.0\.8&Key=korail1234567890&code=app\.display\.image&/);
       assert.match(req.data, /code=app\.login\.cphd/);
       assert.match(req.data, /deviceWidth=1440&deviceHeight=3120&OSVersion=37/);
       return CPHD;
     }],
     ["login.Login", (req) => {
-      assert.equal(req.data.Version, "250601003");
+      assert.equal(req.data.Version, "250722001");
       assert.equal(req.data.AppVersion, "7.0.8");
       assert.equal(req.data.Key, "korail1234567890");
       assert.equal(req.data.txtInputFlg, "4");
-      assert.equal(req.data.txtMemberNo, "010-1234-5678");
+      assert.equal(req.data.txtMemberNo, "01012345678"); // app sends phone ids without hyphens
       assert.equal(req.data.checkValidPw, "Y");
       assert.equal(req.data.idx, "77");
       assert.match(req.data.txtPwd, /\n$/); // app-style wrapped base64
@@ -84,7 +84,8 @@ test("login: id kinds (digits phone / member no / email) and server failure reas
   assert.equal(k.lastLoginMessage, "비밀번호가 일치하지 않습니다. [P058]");
   await k.login("1234567890", "pw!");
   await k.login("me@example.com", "pw!");
-  assert.deepEqual(seen, [["4", "01012345678"], ["2", "1234567890"], ["5", "me@example.com"]]);
+  await k.login("010-1234-5678", "pw!");
+  assert.deepEqual(seen, [["4", "01012345678"], ["2", "1234567890"], ["5", "me@example.com"], ["4", "01012345678"]]);
 });
 
 test("login: non-envelope reply (anti-bot block / HTML) is surfaced verbatim", async () => {
@@ -98,20 +99,34 @@ test("login: non-envelope reply (anti-bot block / HTML) is surfaced verbatim", a
   assert.match(k2.lastLoginMessage, /코레일 봉투가 아닌 응답 \(HTTP 200\): 접근이 차단되었습니다/);
 });
 
-test("search form matches korail-mobile-api build_train_search_form; rows parsed and filtered", async () => {
+// ScheduleView as the 7.0.8 app sends it (pykorail 0.4.0, live-verified 2026-10-12).
+function appSearchForm(over = {}) {
+  return Object.assign({
+    Device: "AD", Version: "250722001", Sid: "", txtMenuId: "11", radJobId: "1",
+    selGoTrain: "100", txtTrnGpCd: "100", txtGoStart: "서울", txtGoEnd: "부산",
+    txtGoAbrdDt: "20260801", txtGoHour: "090000",
+    txtPsgFlg_1: "1", txtPsgFlg_2: "0", txtPsgFlg_3: "0", txtPsgFlg_4: "0", txtPsgFlg_5: "0",
+    txtSeatAttCd_2: "000", txtSeatAttCd_3: "000", txtSeatAttCd_4: "015",
+    ebizCrossCheck: "N", srtCheckYn: "N", rtYn: "N", adjStnScdlOfrFlg: "N",
+  }, over);
+}
+
+test("search: app-format query-string POST (empty Sid, no Key/AppVersion); rows parsed and filtered", async () => {
   const trainInfo = { ...ref.sampleTrain };
   const soldOut = { ...ref.sampleTrain, h_dpt_tm: "100000", h_gen_rsv_cd: "13" };
-  let form = null;
+  let req0 = null;
   const http = mockHttp([
     ["seatMovie.ScheduleView", (req) => {
-      form = req.data;
+      req0 = req;
       assert.ok(req.headers["x-dynapath-m-token"]);
       return { strResult: "SUCC", trn_infos: { trn_info: [trainInfo, soldOut] } };
     }],
   ]);
   const k = client(http);
   const trains = await k.searchTrain("서울", "부산", "20260801", "090000", { trainType: "100" });
-  assert.deepEqual(form, ref.forms.searchNoMember);
+  assert.equal(req0.method, "POST");
+  assert.equal(req0.data, undefined);
+  assert.deepEqual(req0.params, appSearchForm());
   assert.equal(trains.length, 1); // sold-out one filtered out by default
   assert.equal(trains[0].has_general_seat(), true);
 
@@ -119,7 +134,15 @@ test("search form matches korail-mobile-api build_train_search_form; rows parsed
   await k.searchTrain("서울", "부산", "20260801", "090000", {
     trainType: "109", passengers: buildPassengers({ adults: 2, children: 1, seniors: 1 }), includeNoSeats: true,
   });
-  assert.deepEqual(form, ref.forms.search); // 전체 → SRT included (ebizCrossCheck/srtCheckYn=Y), mbCrdNo carried
+  assert.deepEqual(req0.params, appSearchForm({
+    selGoTrain: "109", txtTrnGpCd: "109", txtPsgFlg_1: "2", txtPsgFlg_2: "1", txtPsgFlg_3: "1",
+    ebizCrossCheck: "Y", srtCheckYn: "Y", mbCrdNo: "1234567890",
+  }));
+});
+
+test("search: -8204 'update the app' block is reported, not swallowed", async () => {
+  const http = mockHttp([["seatMovie.ScheduleView", () => ({ code: -8204, message: "최신 버전으로 업데이트해 주세요." })]]);
+  await assert.rejects(() => client(http).searchTrain("서울", "부산", "20260801", "090000"), /DynaPath -8204/);
 });
 
 test("search: DynaPath block reply becomes a typed error instead of a silent empty list", async () => {
@@ -152,7 +175,9 @@ test("reserve form matches korail-mobile-api build_reservation_form; returns the
   const k = client(http);
   const train = parseTrain(ref.sampleTrainFull);
   const rsv = await k.reserve(train, { passengers: buildPassengers({ adults: 1 }) });
-  assert.deepEqual(form, noEmpty(ref.forms.reserve));
+  // Same form as korail-mobile-api except the internal Version, which the 7.0.8
+  // app now sends as 250722001 (older values get -8204).
+  assert.deepEqual(form, { ...noEmpty(ref.forms.reserve), Version: "250722001" });
   assert.equal(rsv.reservation_id, "PNR123");
   assert.equal(rsv.price, 59800);
   assert.equal(rsv.buy_limit_time, "093000");
